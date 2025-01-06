@@ -1,100 +1,81 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NYC-Crime-Time-Series-Analysis</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            line-height: 1.6;
-            background-color: #f4f4f9;
-        }
-        header {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 0;
-            text-align: center;
-        }
-        h1, h2 {
-            color: #333;
-        }
-        nav {
-            margin-bottom: 20px;
-        }
-        nav a {
-            margin-right: 15px;
-            text-decoration: none;
-            color: #4CAF50;
-        }
-        nav a:hover {
-            text-decoration: underline;
-        }
-        footer {
-            margin-top: 30px;
-            text-align: center;
-            font-size: 0.9em;
-            color: #777;
-        }
-    </style>
-</head>
-<body>
+# NYC Crime Time Series Analysis
 
-<header>
-    <h1>Project README</h1>
-</header>
+## 🌐 Project Website
+Explore the full project and interactive visualizations here:  
+**[NYC Crime Time Series Analysis Website](https://michaelx1010.github.io/NYC-Crime-Time-Series-Analysis)**  
 
-<nav>
-    <a href="Introduction.html">Introduction</a>
-    <a href="Conclusions.html">Conclusions</a>
-</nav>
+---
 
-<main>
-    <h2>About This Project</h2>
-    <p>
-        Welcome to the project website for <strong>Georgetown ANLY-5600</strong>. This site provides a detailed overview 
-        of the research conducted during the course, including the objectives, methodologies, findings, and conclusions.
-    </p>
+## Overview
 
-    <h2>Structure of the Website</h2>
-    <p>
-        The website is organized into the following sections:
-    </p>
-    <ul>
-        <li><strong>Introduction:</strong> An overview of the project, including background, objectives, and scope. <a href="Introduction.html">Visit the Introduction</a>.</li>
-        <li><strong>Conclusions:</strong> Key takeaways and insights derived from the research. <a href="Conclusions.html">Visit the Conclusions</a>.</li>
-        <li><strong>README:</strong> This page, which serves as a guide to navigating the project materials.</li>
-    </ul>
+This project focuses on analyzing and forecasting violent crime trends in New York City using advanced time series analysis and machine learning techniques. By identifying temporal patterns, seasonal trends, and potential predictors, the study provides actionable insights to inform policy decisions and enhance public safety.
 
-    <h2>Technologies Used</h2>
-    <p>
-        The project leverages the following tools and technologies:
-    </p>
-    <ul>
-        <li>Python for data analysis and modeling</li>
-        <li>HTML and CSS for building this website</li>
-        <li>GitHub Pages for hosting</li>
-        <li>Additional libraries and frameworks as detailed in the project documentation</li>
-    </ul>
+---
 
-    <h2>How to Use This Website</h2>
-    <p>
-        Navigate through the links in the navigation bar above to explore the different sections of the project. For any 
-        queries or feedback, feel free to reach out.
-    </p>
+## Objectives
 
-    <h2>Contact Information</h2>
-    <p>
-        For questions or collaboration opportunities, contact <strong>Michael Xie</strong> at 
-        <a href="mailto:your_email@example.com">your_email@example.com</a>.
-    </p>
-</main>
+The primary goals of this project are:
+1. To model and forecast violent crime incidents in NYC using time series analysis.
+2. To uncover significant trends, seasonality, and anomalies in the data.
+3. To evaluate the impact of external factors on crime rates using advanced modeling approaches.
+4. To create effective visualizations that communicate insights to stakeholders.
 
-<footer>
-    <p>&copy; 2025 Michael Xie. All rights reserved.</p>
-</footer>
+---
 
-</body>
-</html>
+## Data Sources
+
+The project leverages publicly available datasets, including:
+- **NYPD Complaint Data Historic**: Comprehensive records of criminal incidents reported in NYC.
+- **NYC Open Data Portal**: Supplementary datasets providing socioeconomic and demographic context.
+
+---
+
+## Methods and Tools
+
+### Time Series Analysis
+- **ARIMA/SARIMA Models**: Capturing temporal dependencies and seasonal patterns.
+- **ARIMAX/SARIMAX Models**: Incorporating exogenous variables to enhance forecasting accuracy.
+- **Spectral Analysis**: Identifying cyclical trends and filtering noise.
+
+### Machine Learning and Deep Learning
+- **ARCH/GARCH Models**: Modeling volatility in crime rates.
+- **Recurrent Neural Networks (RNNs)** and **LSTMs**: Capturing complex temporal patterns in the data.
+
+### Data Visualization
+Interactive and static visualizations created using:
+- **Matplotlib**
+- **Seaborn**
+- **Plotly**
+
+---
+
+## Key Features
+
+- Comprehensive analysis of NYC violent crime trends over time.
+- Exploration of seasonal and cyclical patterns in crime rates.
+- Application of advanced statistical and machine learning models for accurate forecasting.
+- Insights from interactive visualizations available on the project website.
+
+---
+
+## Key Findings
+
+- Clear seasonal trends and periodic spikes in violent crime rates were identified.
+- Advanced models like SARIMAX demonstrated the influence of socioeconomic factors on crime rates.
+- Deep learning models such as LSTMs captured complex temporal dependencies, improving forecasting accuracy.
+
+---
+
+## 📊 Data Visualizations
+
+Interactive and detailed visualizations for trends, seasonality, and model results can be found on the project website:  
+**[NYC Crime Time Series Analysis Website](https://michaelx1010.github.io/NYC-Crime-Time-Series-Analysis)**  
+
+---
+
+## How to Run the Project
+
+### Prerequisites
+- Python 3.8+
+- Required libraries: `pandas`, `numpy`, `scikit-learn`, `matplotlib`, `seaborn`, `statsmodels`, `tensorflow`, and `plotly`.
+
