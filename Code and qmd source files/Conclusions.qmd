@@ -1,0 +1,84 @@
+---
+title: "Conclusions"
+format:
+  html:
+    page-layout: full
+    code-fold: true
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+bibliography: references.bib
+---
+
+![](images/crime.jpg)
+
+## Overview
+
+![Conclusion Diagram](images/conclusion_diagram.png)
+
+
+### Data Gethering
+
+- Now, We have come to the conclusion part of this time series analysis on violent crimes in NYC. Step by step, we gathered comprehensive violent crimes data on NYC including major categories including `Total violent crime`, `Aggravated Assault`, and `Robbery`, also, gathered data on related external factors including `COVID-19 total cases`, `unemployment rates` and `climate/weather` data. 
+
+
+### EDA Process
+- After that, multiple data visualizations were applied to the data, to have a better understanding of the trends, and also provide the geographical plots for a better view of crimes in NYC. Then we proceed to the exploratory data analysis `(EDA)`, where we examine lag plots and check for ACF/PACF plots to prepare our insights for further statistical modeling parts. 
+
+
+### ARIMA/SARIMA Models
+- We then proceeded to the statistical modeling parts where `ARIMA/SARIMA` models were employed for all three types of time series data, performing model diagnostics and obtaining forecasts for violent crime trends.
+
+![SARIMA model forcast for total violent crimes](images/sarima.png)
+
+![SARIMA model forcast for total violent crimes](images/rob.png)
+
+![SARIMA model forcast for total violent crimes](images/aa.png)
+
+- With these forecasts in hand, we've equipped ourselves with a powerful tool for investigating complex patterns of various types of violent crimes in New York City. Our analysis is not just statistical exploration, it offers invaluable insights into crimes evolution over time. This deep dive into the data not only unravels the crime dynamics but also paves the way for a more informed and proactive approach to crime management.
+
+- By providing timely and accurate forecast reports to the `NYPD`, the work takes on a practical and impactful dimension. These forecasts are more than just numbers and graphs; they are a crucial aid in the hands of law enforcement, empowering them with the foresight needed for swift and effective decision-making. In the bustling streets of New York City, where every moment counts, having access to such predictive insights can be a game-changer for the `NYPD`.
+
+### ARIMAX/VAR
+
+- The next step is to incorporate `ARIMAX` and `VAR` models into the crime data with external factors, by doing this, we acquired a more comprehensive modeling forecast to our statistical approach.
+
+
+![ARIMAX model forcast for total violent crimes](images/ARIMAX.png)
+
+![VAR model forcast for total violent crimes](images/var.png)
+
+
+- Implementing `ARIMAX` and `VAR` models in our analysis significantly enhances the depth and breadth of our understanding of New York City's violent crime patterns. These models bring a new level of sophistication to our study, allowing us to incorporate and measure the impact of external factors that might influence crime rates.
+
+
+### Deep learning
+
+- In the final stage of our project, we applied sophisticated deep learning models like Recurrent Neural Networks `(RNN)`, Gated Recurrent Units `(GRU)`, and Long Short-Term Memory `(LSTM)` networks to our dataset of total violent crimes in New York City.
+
+- Our findings from this part of analsyis were illuminating. Among the deep learning models we tested, the `GRU` model emerged as the most accurate method with the relatively lower `RMSE`, surpassing both `RNN` and `LSTM` in accuracy and reliability. 
+
+- Furthermore, when we compared the results of these deep learning models with those obtained from the traditional ARIMA model, a clear distinction was evident. The deep learning models demonstrated a significantly lower `RMSE`. This lower RMSE from the deep learning models suggests a higher level of precision in predicting violent crime trends, underscoring the advanced capabilities of AI-driven approaches.
+
+![ARIMAX model forcast for total violent crimes](images/output.png)
+
+
+## Conclusion and limitations
+
+- Starting this project to investigate violent crime data in New York City has been an incredible experience. It's shown us the complex and dynamic nature of crime. 
+
+- To improve this project, adding more crimes categories and external factors is a cruial part, this will help us counter the forever-changing crimes. This is not all about collecting more data, it is about getting a better understanding of the criminal catrgoeis in the city of New York and finding patterns or connections that might have missed before.
+
+- The updates to this project won't just involve accumulating more data or running more models. They will be about infusing fresh ideas and insights I will be learning afterwards into my work, ensuring that this analysis stays relevant and reflective of the city's current state. It's an ongoing process that requires adaptability, creativity, and a deep commitment to understanding the complexities of urban life.
+
+
+
+
+
+
+
+
+
+
+
+

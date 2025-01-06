@@ -1,0 +1,1114 @@
+---
+title: "ARMA/ARIMA/SARIMA Models"
+format:
+  html:
+    page-layout: full
+    code-fold: true
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+bibliography: references.bib
+---
+
+# Introduction
+
+For this modeling part, we will be fitting time series models to `Total violent crimes`, `Aggvated assault` and `Robbery`. For a better model fitting process, I will only be using weekly data to following reasons:
+
+1.  `High Frequency:` Daily data often exhibits high frequency, resulting in a large number of data points. `ARIMA`, `SARIMA` models may struggle with the increased complexity and noise in such high-frequency data.
+
+2.  `Overfitting:` With daily data, there might be a risk of overfitting, the daily data exhibits irregular fluctuations and the model will tend to learn those daily flucuations which contradicts our goal of generalization.
+
+3.  `Computational Intensity:` Estimating `SARIMA` parameters involves optimization algorithms, and with daily data, the optimization problem can become computationally intense.
+
+::: panel-tabset
+# Total violent crimes
+
+## Rualts from EDA process
+
+-   During the `EDA` process, I already differenced the data and used `ADF` test to check for stationarity.
+
+```{r, warning=FALSE, message=FALSE}
+library(GGally)
+library(ggplot2)
+library(forecast)
+library(tidyverse)
+library(ggthemes)
+library(plotly)
+library(lubridate)
+library(DT)
+library(TTR)
+library(astsa)
+
+# Load the clean violent crime data
+data <- read_csv("./dataset/crimedata_total.csv")
+data_w <- read_csv("./dataset/crimedata_week.csv")
+
+data_t <- data %>%
+  filter(offense_type == "total")
+
+v_ts <- ts(data_t$Total_Crimes, start = c(2007, 1), frequency = 365.25)
+w_ts <- ts(data_w$Total_Crimes, frequency = 52, start = c(2007, 1))
+
+```
+
+## ACF/PACF plots
+
+```{r, warning=FALSE}
+w_ts_d <- w_ts %>% diff()
+ggAcf(w_ts_d, 50) + ggtitle("ACF Plot for violent assault weekly data in NYC")
+ggPacf(w_ts_d, 50) + ggtitle("PACF Plot for violent assault weekly data in NYC")
+autoplot(w_ts_d)
+tseries::adf.test(w_ts_d)
+```
+
+-   **P-value:** The p-value is `0.01`, which is less than the common significance level of `0.05`. Therefore, you would reject the null hypothesis.
+
+## ARIMA model
+
+### Parameters
+
+-   **Parameters:** Based on the ACF plot, `q = 0, 1, 2, 3`, from the PACF plot, `p = 0, 1, 2, 3`, `d = 1, 2`, now it is time to fit the model.
+
+```{r, warning=FALSE}
+######################## Check for different combinations ########
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*32),nrow=32) # roughly nrow = 3x4x2
+
+
+for (p in 1:4)# p=0,1,2,3 : 4
+{
+  for(q in 1:4)# q=0,1,2,3 :4
+  {
+    for(d in 1:2)# d=1,2 :2
+    {
+      
+      if(p-1+d+q-1<=8) #usual threshold
+      {
+        
+        model<- Arima(w_ts,order=c(p-1,d,q-1),include.drift=TRUE) 
+        ls[i,]= c(p-1,d,q-1,model$aic,model$bic,model$aicc)
+        i=i+1
+        #print(i)
+        
+      }
+      
+    }
+  }
+}
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+#temp
+knitr::kable(temp)
+```
+
+-   Extract the lowest `AIC`, `BIC` and `AICc`
+
+```{r}
+# Extract lowest AIC
+temp[which.min(temp$AIC),] 
+```
+
+```{r}
+# Extract lowest BIC
+temp[which.min(temp$BIC),]
+```
+
+```{r}
+# Extract lowest AICc
+temp[which.min(temp$AICc),]
+```
+
+-   Based on the results, the `ARIMA(0,2,2)` and `ARIMA(1,2,3)` are the best models.
+
+### Model diagnostics
+
+**ARIMA(0,2,2):**
+
+```{r, warning=FALSE}
+# Model diagnostics for ARIMA(0,2,2)
+sarima(w_ts, 0, 2, 2)
+```
+
+-   The model diagnostics tell us that the parameters are statistically significant since the `p-value` is smaller than `0.05`, the ACF of residuals and Q-Q plot tells us the residuals are normally distributed and have constant variance, also `p-values` for `Ljung-Box` test has shown results that are above `0.05`.
+
+-   $Y_t = c + \varepsilon_t - 1.5286\varepsilon_{t-1} + 0.5286\varepsilon_{t-2}$
+
+**ARIMA(1,2,3):**
+
+```{r, warning=FALSE}
+# Model diagnostics for ARIMA(0,2,2)
+sarima(w_ts, 1, 2, 3)
+```
+
+-   The model diagnostics tell us that the parameters are statistically significant since the `p-value` is smaller than `0.05`, the ACF of residuals and Q-Q plot tells us the residuals are normally distributed and have constant variance, also `p-values` for `Ljung-Box` test has shown results that are above `0.05`.
+
+$Y_t = 0.5829 \cdot \varepsilon_{t-1} - 2.1588 \cdot \varepsilon_t + 1.5395 \cdot \varepsilon_{t-2} - 0.3807 \cdot \varepsilon_{t-3} + \varepsilon_t$
+
+### Cross Validation
+
+```{r}
+arima_forecast <- function(y, h, order) {
+  fit <- Arima(y, order = order)
+  forecast(fit, h = h)
+}
+h = 52
+
+# Cross-validation for ARIMA(0,2,2)
+cv_arima_022 <- tsCV(w_ts, arima_forecast, h = h, order = c(0, 2, 2))
+
+# Cross-validation for ARIMA(1,2,3)
+cv_arima_123 <- tsCV(w_ts, arima_forecast, h = h, order = c(1, 2, 3))
+
+# Calculate MSE
+mse_arima_022 <- mean(cv_arima_022^2, na.rm = TRUE)
+mse_arima_123 <- mean(cv_arima_123^2, na.rm = TRUE)
+
+# Create a data frame for ggplot
+mse_data <- data.frame(Model = c("ARIMA(0,2,2)", "ARIMA(1,2,3)"),
+                       MSE = c(mse_arima_022, mse_arima_123))
+
+# Plotting with ggplot2
+ggplot(mse_data, aes(x = Model, y = MSE, fill = Model)) +
+  geom_bar(stat = "identity") +
+  labs(title = "MSE of ARIMA Models", x = "Model", y = "MSE") +
+  theme_minimal()
+```
+
+-   Based on the cross-validation, I will chose `ARIMA(1, 2, 3)`due to less MSE.
+
+### use `auto.arima()`
+
+```{r}
+# Use auto.arima() to generate model parameters
+# auto.arima(w_ts)
+```
+
+### Model forecasting
+
+```{r}
+# Forecast the next year's weekly crimes using ARIMA
+sarima.for(w_ts, 52, 1,2,3)
+```
+
+-   This result forecasts the crimes after one year of 2022, it does not have the expected wave-like forecasts, I believe this has to do with no AR process and also no seasonal component.
+
+### Benchmark method for ARIMA model
+
+1.  Mean model
+
+```{r}
+f1<-meanf(w_ts, h=13) #mean
+checkresiduals(f1)
+```
+
+2.  Native method
+
+```{r}
+f2<-naive(w_ts, h=13) 
+checkresiduals(f2)
+```
+
+3.  Seasonal Naive
+
+```{r}
+f3<-snaive(w_ts, h=13)
+checkresiduals(f3)
+```
+
+-   From the benchmark method, only the `Naive` model illustrates a constant variance from the residuals plots and the ACF plots, the other benchmark models all resemble a correlation among their residuals.
+
+## SARIMA model
+
+### Parameters
+
+For the SARIMA model, we will begin by examining various degrees of seasonal lags for the seasonal effects through an analysis of Both ACF and PACF plots.
+
+```{r}
+# Combinnation of both first order differencing and seasonal differencing.
+w_ts %>% diff() %>% diff(lag=52) %>% ggAcf(50)
+```
+
+```{r}
+w_ts %>% diff() %>% diff(lag=52) %>% ggPacf(50)
+```
+
+Based on the ACF/PACF plots
+
+-   Here we can choose `p = 0, 1, 2, 3, 4, 5`, `q = 0, 1, 2, 3`, `d = 1, 2`, `P = 1, 2, 3`, `Q = 1, 2, 3`, `D = 1, 2`.
+-   Looping through model parameters for SARIMA
+
+```{r}
+######################## Check for different combinations ########
+
+
+#write a funtion
+SARIMA.c=function(p1,p2,q1,q2,P1,P2,Q1,Q2,data){
+  
+  #K=(p2+1)*(q2+1)*(P2+1)*(Q2+1)
+  
+  temp=c()
+  d=2
+  D=1
+  s=52
+  
+  i=1
+  temp= data.frame()
+  ls=matrix(rep(NA,9*15),nrow=15)
+  
+  
+  for (p in p1:p2)
+  {
+    for(q in q1:q2)
+    {
+      for(P in P1:P2)
+      {
+        for(Q in Q1:Q2)
+        {
+          if(p+d+q+P+D+Q<=9)
+          {
+            
+            model<- Arima(data,order=c(p-1,d,q-1),seasonal=c(P-1,D,Q-1))
+            ls[i,]= c(p-1,d,q-1,P-1,D,Q-1,model$aic,model$bic,model$aicc)
+            i=i+1
+            #print(i)
+            
+          }
+          
+        }
+      }
+    }
+    
+  }
+  
+  
+  temp= as.data.frame(ls)
+  names(temp)= c("p","d","q","P","D","Q","AIC","BIC","AICc")
+  
+  temp
+  
+}
+
+output=SARIMA.c(p1=1,p2=6,q1=1,q2=4,P1=1,P2=4,Q1=1,Q2=4,data=w_ts)
+
+knitr::kable(output)
+```
+
+-   Extract the lowest `AIC`, `BIC` and `AICc`
+
+```{r}
+# Extract lowest AIC
+output[which.min(output$AIC),] 
+```
+
+```{r}
+# Extract lowest BIC
+output[which.min(output$BIC),]
+```
+
+```{r}
+# Extract lowest AICc
+output[which.min(output$AICc),]
+```
+
+-   The `ARIMA(0,2,2)(0,1,0)52` is the best model
+
+### Model diagnostics
+
+```{r}
+# Model diagnostics
+sarima(w_ts,0,2,2,0,1,0,52)
+```
+
+-   Based on the model diagnostics, all coefficients in the `SARIMA(0,2,1)(0,1,1)52` model are statistically significant. Additionally, the ACF plots of the residuals, QQ plot, and `Ljung-Box` test indicate good normality of the residuals.
+
+-   \$(1 - (-1.7364)B) (1 - 0B\^{365})(1 - 1B\^{365}) (1 - \nabla)(1 - \nabla\^{365}) y_t = 1.4144 + (1 + 0.7364\nabla)(1 + 0\nabla\^{365}) a_t \$
+
+### SARIMA model forecasting
+
+Forecast the assault weekly total crimes for the next year.
+
+```{r}
+# Forecast the next year's weekly crimes using SARIMA
+sarima.for(w_ts, 52, 0,2,2,0,1,0,52)
+```
+
+```{r, warning=FALSE}
+# Forecast the next year's weekly crimes using SARIMA
+fit <- w_ts %>%
+  Arima(order=c(0,2,2), seasonal=c(0,1,0),include.drift = TRUE)
+
+fit %>% forecast(h=52) %>% autoplot()
+```
+
+### Benchmark method for SARIMA model
+
+```{r}
+# Naive method
+naive_model <- naive(w_ts, h = 52)
+
+# Seasonal Naive method
+snaive_model <- snaive(w_ts, h = 52)
+
+# Average method
+average_model <- meanf(w_ts, h = 52)
+
+# SARIMA model
+sarima_forecast <- forecast(fit, h = 52)
+
+# Print out accuracy metrics
+cat("Naive Method Accuracy:\n")
+print(accuracy(naive_model))
+
+cat("\nSeasonal Naive Method Accuracy:\n")
+print(accuracy(snaive_model))
+
+cat("\nAverage Method Accuracy:\n")
+print(accuracy(average_model))
+
+cat("\nSARIMA Model Accuracy:\n")
+print(accuracy(sarima_forecast))
+
+```
+
+Based on the accuracy metrics, The SARIMA model outperforms all methods, as seen in lower RMSE, MAE, and MASE, except the Naive method.
+
+```{r, eval=FALSE}
+# Plot forecasts
+autoplot(w_ts) +
+  autolayer(meanf(w_ts, h = 52), series = "Mean", PI = FALSE) +
+  autolayer(naive(w_ts, h = 52), series = "Naïve", PI = FALSE) +
+  autolayer(snaive(w_ts, h = 52), series = "Seasonal Naïve", PI = FALSE)+
+  autolayer(forecast(fit, h = 52), series = "SARIMA", PI = FALSE) +
+  ggtitle("Forecasts for weekly total violent crimes in NYC") +
+  xlab("Year") + ylab("Crimes") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+# Robbery Crimes
+
+```{r, warning=FALSE, message=FALSE}
+data_t <- data %>%
+  filter(offense_type == "robbery")
+
+v_ts <- ts(data_t$Total_Crimes, start = c(2007, 1), frequency = 365.25)
+
+data_w <- data_t %>%
+  mutate(week = floor_date(as.Date(date_single), unit = "week")) %>%
+  group_by(week, offense_type) %>%
+  summarise(Total_Crimes = sum(Total_Crimes)) %>%
+  ungroup()
+
+w_ts <- ts(data_w$Total_Crimes, frequency = 52, start = c(2007, 1))
+```
+
+## ACF/PACF plots
+
+```{r, warning=FALSE}
+w_ts_d <- w_ts %>% diff()
+ggAcf(w_ts_d, 50) + ggtitle("ACF Plot for Robbery weekly data in NYC")
+ggPacf(w_ts_d, 50) + ggtitle("PACF Plot for Robbery assault weekly data in NYC")
+autoplot(w_ts_d)
+tseries::adf.test(w_ts_d)
+```
+
+-   **P-value:** The p-value is `0.01`, which is less than the common significance level of `0.05`. Therefore, you would reject the null hypothesis.
+
+## ARIMA model
+
+### Parameters
+
+-   **Parameters:** Based on the ACF plot, `q = 0, 1, 2, 3`, from the PACF plot, `p = 0, 1, 2, 3`, `d = 1, 2`, now it is time to fit the model.
+
+```{r, warning=FALSE}
+######################## Check for different combinations ########
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*32),nrow=32) # roughly nrow = 3x4x2
+
+
+for (p in 1:4)# p=0,1,2,3 : 4
+{
+  for(q in 1:4)# q=0,1,2,3 :4
+  {
+    for(d in 1:2)# d=1,2 :2
+    {
+      
+      if(p-1+d+q-1<=8) #usual threshold
+      {
+        
+        model<- Arima(w_ts,order=c(p-1,d,q-1),include.drift=TRUE) 
+        ls[i,]= c(p-1,d,q-1,model$aic,model$bic,model$aicc)
+        i=i+1
+        #print(i)
+        
+      }
+      
+    }
+  }
+}
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+#temp
+knitr::kable(temp)
+```
+
+-   Extract the lowest `AIC`, `BIC` and `AICc`
+
+```{r}
+# Extract lowest AIC
+temp[which.min(temp$AIC),] 
+```
+
+```{r}
+# Extract lowest BIC
+temp[which.min(temp$BIC),]
+```
+
+```{r}
+# Extract lowest AICc
+temp[which.min(temp$AICc),]
+```
+
+-   Based on the results, the `ARIMA(0,2,2)` and `ARIMA(2,1,2)` are the best models.
+
+### Model diagnostics
+
+**ARIMA(0,2,2):**
+
+```{r, warning=FALSE}
+# Model diagnostics for ARIMA(0,2,2)
+sarima(w_ts, 0, 2, 2)
+```
+
+-   The model diagnostics tell us that the parameters are statistically significant since the `p-value` is smaller than `0.05`, the ACF of residuals and Q-Q plot tells us the residuals are normally distributed and have constant variance, also `p-values` for `Ljung-Box` test has shown results that are above `0.05`.
+
+-   $Y_t = \varepsilon_t - 1.5092\varepsilon_{t-1} + 0.5092\varepsilon_{t-2}$
+
+**ARIMA(2,1,2):**
+
+```{r, warning=FALSE}
+# Model diagnostics for ARIMA(2,1,2)
+sarima(w_ts, 2, 1, 2)
+```
+
+-   The model diagnostics tell us that the parameters are statistically significant since the `p-value` is smaller than `0.05`, the ACF of residuals and Q-Q plot tells us the residuals are normally distributed and have constant variance, also `p-values` for `Ljung-Box` test has shown results that are above `0.05`.
+
+$Y_t = 0.8624 \cdot Y_{t-1} - 0.2071 \cdot Y_{t-2} - 1.3525 \cdot \varepsilon_{t-1} + 0.5491 \cdot \varepsilon_t - 0.1371 + \varepsilon_t$
+
+### Cross Validation
+
+```{r}
+arima_forecast <- function(y, h, order) {
+  fit <- Arima(y, order = order)
+  forecast(fit, h = h)
+}
+h = 52
+
+# Cross-validation for ARIMA(0,2,2)
+cv_arima_022 <- tsCV(w_ts, arima_forecast, h = h, order = c(0, 2, 2))
+
+# Cross-validation for ARIMA(2,1,2)
+cv_arima_123 <- tsCV(w_ts, arima_forecast, h = h, order = c(2, 1, 2))
+
+# Calculate MSE
+mse_arima_022 <- mean(cv_arima_022^2, na.rm = TRUE)
+mse_arima_123 <- mean(cv_arima_123^2, na.rm = TRUE)
+
+# Create a data frame for ggplot
+mse_data <- data.frame(Model = c("ARIMA(0,2,2)", "ARIMA(2,1,2)"),
+                       MSE = c(mse_arima_022, mse_arima_123))
+
+# Plotting with ggplot2
+ggplot(mse_data, aes(x = Model, y = MSE, fill = Model)) +
+  geom_bar(stat = "identity") +
+  labs(title = "MSE of ARIMA Models", x = "Model", y = "MSE") +
+  theme_minimal()
+```
+
+-   Based on the cross-validation, I will chose `ARIMA(2, 1, 2)`due to significantly less MSE.
+
+### use `auto.arima()`
+
+```{r}
+# Use auto.arima() to generate model parameters
+# auto.arima(w_ts)
+```
+
+-   I'm having a weird issue with `auto.arima()` for this data, it will run for a long time and crash.
+
+### Model forecasting
+
+```{r}
+# Forecast the next year's weekly crimes using ARIMA
+sarima.for(w_ts, 52, 2,1,2)
+```
+
+-   This result forecasts the crimes after one year of 2022, it does not have the expected wave-like forecasts, I believe this has to do with no seasonal component.
+
+### Benchmark method for ARIMA model
+
+1.  Mean model
+
+```{r}
+f1<-meanf(w_ts, h=13) #mean
+checkresiduals(f1)
+```
+
+2.  Native method
+
+```{r}
+f2<-naive(w_ts, h=13) 
+checkresiduals(f2)
+```
+
+3.  Seasonal Naive
+
+```{r}
+f3<-snaive(w_ts, h=13)
+checkresiduals(f3)
+```
+
+-   From the benchmark method, only the `Naive` model illustrates a constant variance from the residuals plots and the ACF plots, the other benchmark models all resemble a correlation among their residuals.
+
+## SARIMA model
+
+### Parameters
+
+For the SARIMA model, we will begin by examining various degrees of seasonal lags for the seasonal effects through an analysis of Both ACF and PACF plots.
+
+```{r}
+# Combinnation of both first order differencing and seasonal differencing.
+w_ts %>% diff() %>% diff(lag=52) %>% ggAcf(50)
+```
+
+```{r}
+w_ts %>% diff() %>% diff(lag=52) %>% ggPacf(50)
+```
+
+Based on the ACF/PACF plots
+
+-   Here we can choose `p = 0, 1, 2, 3, 4, 5`, `q = 0, 1, 2, 3`, `d = 1, 2`, `P = 1, 2, 3`, `Q = 1, 2, 3`, `D = 1, 2`.
+-   Looping through model parameters for SARIMA
+
+```{r}
+######################## Check for different combinations ########
+
+
+#write a funtion
+SARIMA.c=function(p1,p2,q1,q2,P1,P2,Q1,Q2,data){
+  
+  #K=(p2+1)*(q2+1)*(P2+1)*(Q2+1)
+  
+  temp=c()
+  d=2
+  D=1
+  s=52
+  
+  i=1
+  temp= data.frame()
+  ls=matrix(rep(NA,9*30),nrow=30)
+  
+  
+  for (p in p1:p2)
+  {
+    for(q in q1:q2)
+    {
+      for(P in P1:P2)
+      {
+        for(Q in Q1:Q2)
+        {
+          if(p+d+q+P+D+Q<=9)
+          {
+            
+            model<- Arima(data,order=c(p-1,d,q-1),seasonal=c(P-1,D,Q-1))
+            ls[i,]= c(p-1,d,q-1,P-1,D,Q-1,model$aic,model$bic,model$aicc)
+            i=i+1
+            #print(i)
+            
+          }
+          
+        }
+      }
+    }
+    
+  }
+  
+  
+  temp= as.data.frame(ls)
+  names(temp)= c("p","d","q","P","D","Q","AIC","BIC","AICc")
+  
+  temp
+  
+}
+
+output=SARIMA.c(p1=1,p2=6,q1=1,q2=4,P1=1,P2=4,Q1=1,Q2=4,data=w_ts)
+
+knitr::kable(output)
+```
+
+-   Extract the lowest `AIC`, `BIC` and `AICc`
+
+```{r}
+# Extract lowest AIC
+output[which.min(output$AIC),] 
+```
+
+```{r}
+# Extract lowest BIC
+output[which.min(output$BIC),]
+```
+
+```{r}
+# Extract lowest AICc
+output[which.min(output$AICc),]
+```
+
+-   The `ARIMA(0,2,2)(0,1,0)52` is the best model
+
+### Model diagnostics
+
+```{r}
+# Model diagnostics
+sarima(w_ts,0,2,2,0,1,0,52)
+```
+
+-   Based on the model diagnostics, all coefficients in the `SARIMA(0,2,1)(0,1,1)52` model are statistically significant. Additionally, the ACF plots of the residuals, QQ plot, and `Ljung-Box` test indicate good normality of the residuals.
+
+-   $(1 - (-1.7044)B) (1 - 0B^{365})(1 - 1B^{365}) y_t = 0.4988 + (1 + 0.7044\nabla)(1 + 0\nabla^{365}) a_t$
+
+### SARIMA model forecasting
+
+Forecast the assault weekly total crimes for the next year.
+
+```{r}
+# Forecast the next year's weekly crimes using SARIMA
+sarima.for(w_ts, 52, 0,2,2,0,1,0,52)
+```
+
+```{r, warning=FALSE}
+# Forecast the next year's weekly crimes using SARIMA
+fit <- w_ts %>%
+  Arima(order=c(0,2,2), seasonal=c(0,1,0),include.drift = FALSE)
+
+fit %>% forecast(h=52) %>% autoplot()
+```
+
+### Benchmark method for SARIMA model
+
+```{r}
+# Naive method
+naive_model <- naive(w_ts, h = 52)
+
+# Seasonal Naive method
+snaive_model <- snaive(w_ts, h = 52)
+
+# Average method
+average_model <- meanf(w_ts, h = 52)
+
+# SARIMA model
+sarima_forecast <- forecast(fit, h = 52)
+
+# Print out accuracy metrics
+cat("Naive Method Accuracy:\n")
+print(accuracy(naive_model))
+
+cat("\nSeasonal Naive Method Accuracy:\n")
+print(accuracy(snaive_model))
+
+cat("\nAverage Method Accuracy:\n")
+print(accuracy(average_model))
+
+cat("\nSARIMA Model Accuracy:\n")
+print(accuracy(sarima_forecast))
+
+```
+
+Based on the accuracy metrics, The SARIMA model,outperforms all methods, as seen in lower RMSE, MAE, and MASE, except the Naive method.
+
+```{r, eval=FALSE}
+# Plot forecasts
+autoplot(w_ts) +
+  autolayer(meanf(w_ts, h = 52), series = "Mean", PI = FALSE) +
+  autolayer(naive(w_ts, h = 52), series = "Naïve", PI = FALSE) +
+  autolayer(snaive(w_ts, h = 52), series = "Seasonal Naïve", PI = FALSE) +
+  autolayer(forecast(fit, h = 52), series = "SARIMA", PI = FALSE) +
+  ggtitle("Forecasts for weekly robbery crimes in NYC") +
+  xlab("Year") + ylab("Crimes") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+# Aggragated Assault
+
+```{r, warning=FALSE, message=FALSE}
+data_t <- data %>%
+  filter(offense_type == "aggravated assault")
+
+v_ts <- ts(data_t$Total_Crimes, start = c(2007, 1), frequency = 365.25)
+
+data_w <- data_t %>%
+  mutate(week = floor_date(as.Date(date_single), unit = "week")) %>%
+  group_by(week, offense_type) %>%
+  summarise(Total_Crimes = sum(Total_Crimes)) %>%
+  ungroup()
+
+w_ts <- ts(data_w$Total_Crimes, frequency = 52, start = c(2007, 1))
+```
+
+## ACF/PACF plots
+
+```{r, warning=FALSE}
+w_ts_d <- w_ts %>% diff()
+ggAcf(w_ts_d, 50) + ggtitle("ACF Plot for Aggragated Assault weekly data in NYC")
+ggPacf(w_ts_d, 50) + ggtitle("PACF Plot for Aggragated Assault assault weekly data in NYC")
+autoplot(w_ts_d)
+tseries::adf.test(w_ts_d)
+```
+
+-   **P-value:** The p-value is `0.01`, which is less than the common significance level of `0.05`. Therefore, you would reject the null hypothesis.
+
+## ARIMA model
+
+### Parameters
+
+-   **Parameters:** Based on the ACF plot, `q = 0, 1, 2, 3`, from the PACF plot, `p = 0, 1, 2, 3`, `d = 1, 2`, now it is time to fit the model.
+
+```{r, warning=FALSE}
+######################## Check for different combinations ########
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*32),nrow=32) # roughly nrow = 3x4x2
+
+
+for (p in 1:4)# p=0,1,2,3 : 4
+{
+  for(q in 1:4)# q=0,1,2,3 :4
+  {
+    for(d in 1:2)# d=1,2 :2
+    {
+      
+      if(p-1+d+q-1<=8) #usual threshold
+      {
+        
+        model<- Arima(w_ts,order=c(p-1,d,q-1),include.drift=TRUE) 
+        ls[i,]= c(p-1,d,q-1,model$aic,model$bic,model$aicc)
+        i=i+1
+        #print(i)
+        
+      }
+      
+    }
+  }
+}
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+#temp
+knitr::kable(temp)
+```
+
+-   Extract the lowest `AIC`, `BIC` and `AICc`
+
+```{r}
+# Extract lowest AIC
+temp[which.min(temp$AIC),] 
+```
+
+```{r}
+# Extract lowest BIC
+temp[which.min(temp$BIC),]
+```
+
+```{r}
+# Extract lowest AICc
+temp[which.min(temp$AICc),]
+```
+
+-   Based on the results, the `ARIMA(2,2,3)` and `ARIMA(0,2,2)`, `ARIMA(1,1,2)` are the best models.
+
+### Model diagnostics
+
+**ARIMA(2,2,3):**
+
+```{r, warning=FALSE}
+# Model diagnostics for ARIMA(2,2,3)
+sarima(w_ts, 2, 2, 3)
+```
+
+-   The model diagnostics tell us that the most parameters are statistically significant except for `ar2`, the ACF of residuals and Q-Q plot tells us the residuals are normally distributed and have constant variance, also `p-values` for `Ljung-Box` test has shown results that are above `0.05`.
+
+-   $Y_t = 0.7601 \cdot Y_{t-1} - 0.0628 \cdot Y_{t-2} - 2.3910 \cdot \varepsilon_{t-1} + 1.9506 \cdot \varepsilon_{t-2} - 0.5596 \cdot \varepsilon_{t-3} + \varepsilon_t$
+
+**ARIMA(0,2,2):**
+
+```{r, warning=FALSE}
+# Model diagnostics for ARIMA(0,2,2)
+sarima(w_ts, 0, 2, 2)
+```
+
+-   The model diagnostics tell us that the parameters are statistically significant since the `p-value` is smaller than `0.05`, the ACF of residuals and Q-Q plot tells us the residuals are normally distributed and have constant variance, also `p-values` for `Ljung-Box` test has shown results that are above `0.05`.
+
+$Y_t = -1.5777 \cdot \varepsilon_{t-1} + 0.5777 \cdot \varepsilon_{t-2} + \varepsilon_t$
+
+**ARIMA(1,1,2):**
+
+```{r, warning=FALSE}
+# Model diagnostics for ARIMA(1,1,2)
+sarima(w_ts, 1, 1, 2)
+```
+
+-   The model diagnostics tell us that the parameters are statistically significant since the `p-value` is smaller than `0.05`, the ACF of residuals and Q-Q plot tells us the residuals are normally distributed and have constant variance, also `p-values` for `Ljung-Box` test has shown results that are above `0.05`.
+
+$Y_t = 0.7518 \cdot Y_{t-1} - 1.3994 \cdot \varepsilon_{t-1} + 0.5381 \cdot \varepsilon_{t-2} + 0.1778 + \varepsilon_t$
+
+### Cross Validation
+
+```{r}
+arima_forecast <- function(y, h, order) {
+  fit <- Arima(y, order = order)
+  forecast(fit, h = h)
+}
+h = 52
+
+# Cross-validation for ARIMA(2,2,3)
+cv_arima_022 <- tsCV(w_ts, arima_forecast, h = h, order = c(2, 2, 3))
+
+# Cross-validation for ARIMA(0,2,2)
+cv_arima_123 <- tsCV(w_ts, arima_forecast, h = h, order = c(0, 2, 2))
+
+
+# Cross-validation for ARIMA(1,1,2)
+cv_arima_112 <- tsCV(w_ts, arima_forecast, h = h, order = c(1, 1, 2))
+
+# Calculate MSE
+mse_arima_022 <- mean(cv_arima_022^2, na.rm = TRUE)
+mse_arima_123 <- mean(cv_arima_123^2, na.rm = TRUE)
+mse_arima_112 <- mean(cv_arima_112^2, na.rm = TRUE)
+
+# Create a data frame for ggplot
+mse_data <- data.frame(Model = c("ARIMA(2,2,3)", "ARIMA(0,2,2)", "ARIMA(1,1,2)"),
+                       MSE = c(mse_arima_022, mse_arima_123,mse_arima_112 ))
+
+# Plotting with ggplot2
+ggplot(mse_data, aes(x = Model, y = MSE, fill = Model)) +
+  geom_bar(stat = "identity") +
+  labs(title = "MSE of ARIMA Models", x = "Model", y = "MSE") +
+  theme_minimal()
+```
+
+-   Based on the cross-validation, I will chose `ARIMA(1,1,2)`due to significantly less MSE compared with the other 2.
+
+### use `auto.arima()`
+
+```{r}
+# Use auto.arima() to generate model parameters
+#auto.arima(w_ts)
+```
+
+### Model forecasting
+
+```{r}
+# Forecast the next year's weekly crimes using ARIMA
+sarima.for(w_ts, 52, 1,1,2)
+```
+
+-   This result forecasts the crimes after one year of 2022, it does not have the expected wave-like forecasts, I believe this has to do with no seasonal component.
+
+### Benchmark method for ARIMA model
+
+1.  Mean model
+
+```{r}
+f1<-meanf(w_ts, h=13) #mean
+checkresiduals(f1)
+```
+
+2.  Native method
+
+```{r}
+f2<-naive(w_ts, h=13) 
+checkresiduals(f2)
+```
+
+3.  Seasonal Naive
+
+```{r}
+f3<-snaive(w_ts, h=13)
+checkresiduals(f3)
+```
+
+-   From the benchmark method, only the `Naive` model illustrates a constant variance from the residuals plots and the ACF plots, the other benchmark models all resemble a correlation among their residuals.
+
+## SARIMA model
+
+### Parameters
+
+For the SARIMA model, we will begin by examining various degrees of seasonal lags for the seasonal effects through an analysis of Both ACF and PACF plots.
+
+```{r}
+# Combinnation of both first order differencing and seasonal differencing.
+w_ts %>% diff() %>% diff(lag=52) %>% ggAcf(50)
+```
+
+```{r}
+w_ts %>% diff() %>% diff(lag=52) %>% ggPacf(50)
+```
+
+Based on the ACF/PACF plots
+
+-   Here we can choose `p = 0, 1, 2, 3, 4, 5`, `q = 0, 1, 2, 3`, `d = 1, 2`, `P = 1, 2, 3`, `Q = 1, 2, 3`, `D = 1, 2`.
+-   Looping through model parameters for SARIMA
+
+```{r}
+######################## Check for different combinations ########
+
+
+#write a funtion
+SARIMA.c=function(p1,p2,q1,q2,P1,P2,Q1,Q2,data){
+  
+  #K=(p2+1)*(q2+1)*(P2+1)*(Q2+1)
+  
+  temp=c()
+  d=2
+  D=1
+  s=52
+  
+  i=1
+  temp= data.frame()
+  ls=matrix(rep(NA,9*30),nrow=30)
+  
+  
+  for (p in p1:p2)
+  {
+    for(q in q1:q2)
+    {
+      for(P in P1:P2)
+      {
+        for(Q in Q1:Q2)
+        {
+          if(p+d+q+P+D+Q<=9)
+          {
+            
+            model<- Arima(data,order=c(p-1,d,q-1),seasonal=c(P-1,D,Q-1))
+            ls[i,]= c(p-1,d,q-1,P-1,D,Q-1,model$aic,model$bic,model$aicc)
+            i=i+1
+            #print(i)
+            
+          }
+          
+        }
+      }
+    }
+    
+  }
+  
+  
+  temp= as.data.frame(ls)
+  names(temp)= c("p","d","q","P","D","Q","AIC","BIC","AICc")
+  
+  temp
+  
+}
+
+output=SARIMA.c(p1=1,p2=6,q1=1,q2=4,P1=1,P2=4,Q1=1,Q2=4,data=w_ts)
+
+knitr::kable(output)
+```
+
+-   Extract the lowest `AIC`, `BIC` and `AICc`
+
+```{r}
+# Extract lowest AIC
+output[which.min(output$AIC),] 
+```
+
+```{r}
+# Extract lowest BIC
+output[which.min(output$BIC),]
+```
+
+```{r}
+# Extract lowest AICc
+output[which.min(output$AICc),]
+```
+
+-   The `ARIMA(0,2,2)(0,1,0)52` is the best model
+
+### Model diagnostics
+
+```{r}
+# Model diagnostics
+sarima(w_ts,0,2,2,0,1,0,52)
+```
+
+-   Based on the model diagnostics, all coefficients in the `SARIMA(0,2,1)(0,1,1)52` model are statistically significant. Additionally, the ACF plots of the residuals, QQ plot, and `Ljung-Box` test indicate good normality of the residuals.
+
+### SARIMA model forecasting
+
+Forecast the assault weekly total crimes for the next year.
+
+```{r}
+# Forecast the next year's weekly crimes using SARIMA
+sarima.for(w_ts, 52, 0,2,2,0,1,0,52)
+```
+
+```{r, warning=FALSE}
+# Forecast the next year's weekly crimes using SARIMA
+fit <- w_ts %>%
+  Arima(order=c(0,2,2), seasonal=c(0,1,0),include.drift = FALSE)
+
+fit %>% forecast(h=52) %>% autoplot()
+```
+
+### Benchmark method for SARIMA model
+
+```{r}
+# Naive method
+naive_model <- naive(w_ts, h = 52)
+
+# Seasonal Naive method
+snaive_model <- snaive(w_ts, h = 52)
+
+# Average method
+average_model <- meanf(w_ts, h = 52)
+
+# SARIMA model
+sarima_forecast <- forecast(fit, h = 52)
+
+# Print out accuracy metrics
+cat("Naive Method Accuracy:\n")
+print(accuracy(naive_model))
+
+cat("\nSeasonal Naive Method Accuracy:\n")
+print(accuracy(snaive_model))
+
+cat("\nAverage Method Accuracy:\n")
+print(accuracy(average_model))
+
+cat("\nSARIMA Model Accuracy:\n")
+print(accuracy(sarima_forecast))
+
+```
+
+Based on the accuracy metrics, The SARIMA model outperforms all other methods in RMSE, MAE, MPE, MAPE, and MASE.
+
+```{r, eval=FALSE}
+# Plot forecasts
+autoplot(w_ts) +
+  autolayer(meanf(w_ts, h = 52), series = "Mean", PI = FALSE) +
+  autolayer(naive(w_ts, h = 52), series = "Naïve", PI = FALSE) +
+  autolayer(snaive(w_ts, h = 52), series = "Seasonal Naïve", PI = FALSE) +
+  autolayer(forecast(fit, h = 52), series = "SARIMA", PI = FALSE) +
+  ggtitle("Forecasts for weekly aggregated assault crimes in NYC") +
+  xlab("Year") + ylab("Crimes") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+:::

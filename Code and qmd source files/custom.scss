@@ -1,0 +1,10 @@
+/*-- scss:rules --*/
+
+// Font 
+//$font-size-root: 20em !default;
+#quarto-content {
+    padding: 0;
+    grid-column: screen-start/screen-end;
+    grid-row: contents-top/contents-bottom;
+    font-size:large
+}

@@ -1,0 +1,89 @@
+---
+title: "Data Vizes in TS"
+---
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(quantmod)
+library(plotly)
+
+options("getSymbols.warning4.0"=FALSE)
+options("getSymbols.yahoo.warning"=FALSE)
+
+tickers = c("NFLX","MSFT","META" )
+for (i in tickers){
+  getSymbols(i,
+             from = "2012-10-01",
+             to = "2022-12-01")}
+
+x <- list(
+  title = "date"
+)
+y <- list(
+  title = "value"
+)
+
+stock <- data.frame(NFLX$NFLX.Adjusted,
+                    MSFT$MSFT.Adjusted,
+                    META$META.Adjusted)
+
+
+stock <- data.frame(stock,rownames(stock))
+colnames(stock) <- append(tickers,'Dates')
+
+stock$date<-as.Date(stock$Dates,"%Y-%m-%d")
+
+```
+
+```{r, echo=FALSE}
+a <- ggplot(stock, aes(x=date)) +
+  geom_line(aes(y=NFLX, colour="NFLX"))+
+  geom_line(aes(y=MSFT, colour="MSFT"))+
+  geom_line(aes(y=META, colour="META"))+
+   labs(
+    title = "Stock Prices for the Netflix, Microsoft, and Meta",
+    subtitle = "From 2013-2022",
+    x = "Date",
+    y = "Adjusted Closing Prices")+
+    guides(colour=guide_legend(title="Companies")) 
+    
+ggplotly(a)
+```
+
+As we can see from the time series plot, all three companies stock is steadily increasing from 2014 to 2021, Netflix stockthe largest increase. But Until the end of 2021, all three stocks dropped significantly, Netflix Stock also has the largest drop.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+wt = read.csv("climate.csv", header = TRUE)
+
+wt <- wt %>%
+  filter(NAME == "DALECARLIA RESERVOIR, MD US")
+
+wt$DATE<-as.Date(wt$DATE,"%Y-%m-%d")
+
+pw<-ggplot(wt, aes(x=DATE, y=TMAX)) +
+  geom_line(colour="blue") + 
+  ggtitle("Maximum temperature at the time of observation of Delecarila Reservoir station from 2021-01-01 to 2021-09-30 in Washington DC")
+
+ggplotly(pw)
+
+```
+
+We can tell from this plot that the max temperature of a day in DC is increasing from January to September, which makes sense since the weather is going from Winter to Summer.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+gdp = read.csv("GDP.csv", header = TRUE)
+
+gdp$DATE <- as.Date(gdp$DATE,"%Y-%m-%d")
+
+g <- ggplot(data = gdp, aes(x = DATE, y = GDP))+
+  geom_line(color="blue")+
+  labs(
+    title = "US GDP trends from 1947 to 2023 ",
+    x = "Date",
+    y = "GDP")
+
+ggplotly(g)
+```
+
+We can see from the plot that GDP in US in increasing from 1947 to 2023.

@@ -1,0 +1,62 @@
+---
+title: "About Michael"
+image: profile.jpg
+about:
+  template: trestles
+  image-width: 20em
+  image-shape: round
+  links:
+    - icon: linkedin
+      text: LinkedIn
+      href: https://www.linkedin.com/in/michael-xinzhe-xie-89713b296/
+    - icon: github
+      text: Github
+      href: https://github.com/Michaelx1010
+    - icon: file-person-fill
+      text: Resume
+      href: XinzheXie-CV.pdf
+format: 
+    html: 
+      page-layout: full
+      code-tools: false
+---
+
+## Contact info
+
+-   **GUID:** xx133
+
+-   **Email:** xx133\@georgetown.edu
+
+-   **Phone:** 571-220-3128
+
+## Background
+
+-   Hello, I'm Xinzhe Xie, and I prefer to be called Michael. Originally from Chongqing, China, I graduated in 2021 with a degree in Statistics and Actuarial Science from the University of Massachusetts Amherst. After graduation, I embarked on a career as a data analyst in China, where my work primarily focused on developing river water quality forecast models.
+
+-   In my role, I applied mechanical modeling methods using R, built interactive data visualizations using R Shiny, and deployed applications using Shiny Proxy and Docker. I also had the opportunity to work with neural networks and SARIMA time series modeling. My professional interests lie in the fields of machine learning and time series modeling, particularly within the realms of environmental and healthcare applications.
+
+-   Beyond my professional pursuits, I have a strong passion for weightlifting, specifically weighted calisthenics and powerlifting. I also have a background as a competitive swimmer, which has contributed to my discipline and determination.
+
+## Academic Journey
+
+-   My academic journey has been marked by a deep fascination with time series analysis and machine learning. During my previous job, I gained extensive experience in handling large time series datasets. I applied various models to these datasets to discern underlying trends and patterns. This experience motivated me to enroll in DSAN 5600 this semester, where I hope to further develop my expertise in time series analysis.
+
+-   I'm particularly enthusiastic about machine learning, especially deep learning methods such as neural network modeling. These methods have broad applications, including forecasting in domains like stocks, healthcare, and weather. I believe that incorporating deep learning techniques into time series modeling can significantly enhance predictive accuracy.
+
+## Professional interest
+
+**My professional interests encompass the following areas:**
+
+-   Advanced programming in R and Python
+
+-   Time series forecasting models, including ARIMA, SARIMA, Bayesian structural time series, and more
+
+-   Deep learning methods, particularly neural networks, for forecasting in diverse fields such as stocks, healthcare, and weather
+
+-   Software development, including building and deploying applications
+
+### Education
+
+-   Master of Science(MS) in Data Science and Analytics, Georgetown University(2025)
+
+-   Bachelor of Science (BS) in Mathematics, University of Massachusetts Amherst (2021)

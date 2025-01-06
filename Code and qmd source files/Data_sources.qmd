@@ -1,0 +1,76 @@
+---
+title: "Data Sources"
+format:
+  html:
+    page-layout: full
+    code-fold: true
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+bibliography: references.bib
+---
+
+## [Crime Open Database (CODE)](https://osf.io/zyaqn/)
+
+`1.` The Crime Open Database `(CODE)`, as supported and maintained by the `OSF` platform, is a comprehensive database service that offers crime data from multiple cities in the United States for analysis in the field of crime research. The database, which is publicly accessible and contains roughly 34.1GB of data, and is maintained by the contributor `Matthew Ashby`. the whole database is free for all users to use. 
+
+`2.` The function `get_crime_data()` returns a tidy data tibble crime data sets with each row representing a single crime. The data provided for each offense includes the offense type, approximate offense location and date/time. 
+
+```{r, warning=FALSE, message=FALSE}
+#install.packages("crimedata")
+#devtools::install_github("mpjashby/crimedata")
+library(crimedata)
+library(tidyverse)
+library(DT)
+#Load the crime data of NYC from 2007 to 2022
+#data <- get_crime_data(
+#  cities = "New York", 
+#  years = 2007:2022, 
+#  type = "core",
+#  output = "sf"
+#) 
+#Save the data
+#write.csv(data, file = "dataset/crimedata_NYC.csv", row.names = FALSE)
+
+data <- read_csv("./dataset/crimedata_DC.csv")
+datatable(head(data))
+```
+
+![](images/osf.png)
+
+## [COVIDCast dataset](https://cmu-delphi.github.io/covidcast/covidcastR/)
+
+`1.` `COVIDcast` is the name for Delphi's project of Carnegie Mellon University in support of the COVID-19 response in the United States.
+
+`2.` It provides `R` access to the `COVIDcast Epidata API` published by the Delphi group at Carnegie Mellon University. This API provides daily access to a range of COVID-related variables Delphi have built and maintained.
+
+`3.` The package supports convenient plotting and mapping tools, correlation analyses between variables, and various geographical aspects for working with counties, metropolitan areas, and other units.
+
+**Example Visualizations**
+
+```{r, message=FALSE, warning=FALSE}
+#install.packages("covidcast")
+library(covidcast)
+library(tidyverse)
+library(plotly)
+deaths <- covidcast_signal("jhu-csse", "deaths_incidence_num",
+                           "2020-04-15", "2021-04-15",
+                           geo_type = "nation")
+a <- plot(deaths, plot_type = "line")
+ggplotly(a)
+```
+
+![](images/covidcast.png)
+
+## [Unemployment Rate in New York (NYUR)](https://fred.stlouisfed.org/series/NYUR)
+
+The "Unemployment Rate in New York (NYUR)" data set, is supported and maintained by the `Federal Reserve Bank of St. Louis's FRED database`, which provides a comprehensive look at the fluctuations in unemployment rates within New York City. The data are updated monthly and are seasonally adjusted to account for predictable aspects within the job market throughout the year. Additionally, this data set supports comparison of unemployment rates over time. 
+
+The data provided by `FRED` is sourced from the U.S. Bureau of Labor Statistics, under the "State Employment and Unemployment" release, ensuring that the statistics are collected and processed by a reliable government authority. 
+
+![](images/fred.png)
+
+## [National Climatic Data Center (NCDC)](https://www.ncdc.noaa.gov/cdo-web/datasets/)
+The Climate Data Online `(CDO)` is supported by the National Climatic Data Center (NCDC), a resource that offers access to a variety of aspects of climate data sets. Users can explore different data sets by name, each contains a detailed description, also, related tools for analysis, and options for `FTP` access and sample downloads. 
+
+![](images/logo.png)

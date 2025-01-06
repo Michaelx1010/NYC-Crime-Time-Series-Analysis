@@ -1,0 +1,286 @@
+---
+title: "Exploratory Data Analysis"
+format:
+  html:
+    page-layout: full
+    code-fold: true
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+bibliography: references.bib
+---
+
+## Lag plots for total violent crimes
+
+```{r, warning=FALSE, message=FALSE}
+library(GGally)
+library(ggplot2)
+library(forecast)
+library(tidyverse)
+library(ggthemes)
+library(plotly)
+library(lubridate)
+library(DT)
+library(TTR)
+
+
+# Load the clean violent crime data
+data <- read_csv("./dataset/crimedata_total.csv")
+
+data_t <- data %>%
+  filter(offense_type == "total")
+
+v_ts <- ts(data_t$Total_Crimes, start = c(2007, 1), frequency = 365.25)
+
+gglagplot(v_ts, do.lines=FALSE) +xlab("Lags")+ylab("Yt")+ggtitle("Lag Plot for violent crime time series from 2007 to 2022 in NYC ") +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) +
+  theme_minimal()
+```
+
+-   Based on the lag plot, there are obvious strong linear relationships at `lag 7` and `lag 14`, this indicates that the data might have weekly seasonality.
+
+**Try some weekly lags:**
+
+```{r}
+gglagplot(v_ts, do.lines=FALSE, set.lags = c(7, 14, 21)) +xlab("Lags")+ylab("Yt")+ggtitle("Weekly lag Plot for violent crime time series from 2007 to 2022 in NYC ") +
+  theme_minimal()+
+  theme(axis.text.x=element_text(angle=45, hjust=1))
+```
+
+-   Those weekly lag plots have proved my assumption that the data has weekly seasonality.
+
+**Try longer lags with month:**
+
+```{r}
+#Try some longer lags with month
+gglagplot(v_ts, do.lines=FALSE, set.lags = c(30, 60)) +xlab("Lags")+ylab("Yt")+ggtitle("monthly lag Plot for violent crime time series from 2007 to 2022 in NYC ") +
+  theme_minimal()+
+  theme(axis.text.x=element_text(angle=45, hjust=1))
+```
+
+-   This suggest that the data might not have a monthly seasonality
+
+## Decomposition
+
+-   Decompose data with both `additive` and `multiplicative` method
+
+### Daily data
+
+**Additive:**
+
+```{r}
+#additive
+autoplot(decompose(v_ts, "additive"))
+```
+
+**multiplicative:**
+
+```{r}
+#multiplicative
+autoplot(decompose(v_ts, "multiplicative"))
+```
+
+### Weekly data
+
+```{r,message=FALSE,warning=FALSE}
+# Aggragate data to weekly
+data_w <- data_t %>%
+  mutate(week = floor_date(as.Date(date_single), unit = "week")) %>%
+  group_by(week, offense_type) %>%
+  summarise(Total_Crimes = sum(Total_Crimes)) %>%
+  ungroup()
+
+#write.csv(data_w, file = "dataset/crimedata_week.csv", row.names = FALSE)
+```
+
+**Additive:**
+
+```{r}
+#additive data
+w_ts <- ts(data_w$Total_Crimes, frequency = 52, start = c(2007, 1))
+autoplot(decompose(w_ts, "additive"))
+```
+
+**multiplicative:**
+
+```{r}
+#Multiplicative data
+autoplot(decompose(w_ts, "multiplicative"))
+```
+
+### Interpretation
+
+-   The weekly data decomposition helps view the seasonality in a better way.
+
+-   Both `additive` and `multiplicative` decomposition gives similar results, so it might indicate that the data does not exhibit strong multiplicative seasonality, and the seasonal component can be effectively captured using an additive approach.
+
+-   We could see clear increasing trend from our decomposition, very clear yearly seasonality where crimes gradually increases until reaches peaks in May and June, and decrease to the lowest point at around December and January.
+
+## ACF and PACF plots
+
+### Daily data
+
+```{r}
+ggAcf(v_ts, 60)+ggtitle("ACF Plot for violent assault daily data in NYC")
+```
+
+```{r, warning=FALSE}
+ggPacf(v_ts,60, main="ACF Plot for violent assault daily data in NYC")
+```
+
+-   As we can see from this ACF and PACF plots of the data, we see strong correlations between the data and its lagged data, also, this data is definitely not stationary since we can clearly see yearly and weekly seasonality, we need to perform difference and seasonal difference to this data.
+
+### Weekly data
+
+```{r}
+ggAcf(w_ts)+ggtitle("ACF Plot for violent assault weekly data in NYC")
+```
+
+```{r}
+ggPacf(w_ts)+ggtitle("PACF Plot for violent assault weekly data in NYC")
+```
+
+-   We can see pretty high correlation with weekly data, also, quarterly correlations are also visible in the ACF plot.
+
+## Stationarity
+
+### Daily data
+
+Use the `Augmented Dickey-Fuller` Test on data, first use it on the daily data
+
+```{r, warning=FALSE}
+tseries::adf.test(v_ts)
+```
+
+-   Based on the test, `p-value` is smaller than `0.05`, and we reject the null hypothesis, which shows that this data is stationary.
+
+### Weekly data
+
+```{r, warning=FALSE}
+tseries::adf.test(w_ts)
+```
+
+-   Based on the test, the `p-value` is greater than `0.05`, suggests that this data is not stationary.
+
+-   The result could imply that the `Augmented Dickey-Fuller` test is not reliable test for stationarity.
+
+## Data differencing
+
+### Daily data
+
+**First order differencing**
+
+```{r}
+v_ts %>% diff() %>% ggAcf(50)
+v_ts %>% diff() %>% ggPacf(50)
+```
+
+-   we can see that the daily data still has seasonality after the first order differencing, need to apply seasonal difference.
+
+**Seasonal differencing**
+
+```{r}
+v_ts %>% diff(lag=7) %>% ggAcf(50)
+v_ts %>% diff(lag=7) %>% ggPacf(50)
+```
+
+-   This looks much more stationary, still can see some seasonality. Need to apply both difference and seasonal difference.
+
+**Both first order and seasonal differencing**
+
+```{r}
+v_ts %>% diff(lag=7) %>% diff() %>% ggAcf(50)
+v_ts %>% diff(lag=7) %>% diff() %>% ggPacf(50)
+```
+
+### Weekly data
+
+```{r}
+w_ts %>% diff() %>% ggAcf(50)
+w_ts %>% diff() %>% ggPacf(50)
+```
+
+-   For the weekly data, only first order differencing is enough to make the data stationary.
+
+### Using ADF test to check for stationarity
+
+-   For the daily data
+
+```{r, warning=FALSE}
+v_ts_test <- v_ts %>% diff(lag=7) %>% diff()
+tseries::adf.test(v_ts_test)
+```
+
+-   For the weekly data
+
+```{r, warning=FALSE}
+w_ts_test <- w_ts %>% diff()
+tseries::adf.test(w_ts_test)
+```
+
+-   Based on the results of both tests, both p-value is smaller than 0.05, this suggests that both differenced data is stationary.
+
+## Moving average smoothing
+
+### Daily data
+
+-   7-MA
+
+```{r,warning=FALSE}
+autoplot(v_ts, series="Data") +
+  autolayer(ma(v_ts, 7), series="7-MA") +
+  xlab("Year") + ylab("Number of crimes") +
+  ggtitle("Violent crime time series from 2007 to 2022 using SMA") +
+  scale_colour_manual(values=c("Data"="grey","7-MA"="red"),
+                      breaks=c("Data","7-MA"))
+```
+
+-   14-MA
+
+```{r, warning=FALSE}
+autoplot(v_ts, series="Data") +
+  autolayer(ma(v_ts, 14), series="14-MA") +
+  xlab("Year") + ylab("Number of crimes") +
+  ggtitle("Violent crime time series from 2007 to 2023 using SMA") +
+  scale_colour_manual(values=c("Data"="grey","14-MA"="red"),
+                      breaks=c("Data","14-MA"))
+```
+
+-   21-MA
+
+```{r, warning=FALSE}
+autoplot(v_ts, series="Data") +
+  autolayer(ma(v_ts, 21), series="21-MA") +
+  xlab("Year") + ylab("Number of crimes") +
+  ggtitle("Violent crime crime time series from 2007 to 2023 using SMA") +
+  scale_colour_manual(values=c("Data"="grey","21-MA"="red"),
+                      breaks=c("Data","21-MA"))
+```
+
+-   For the daily data, I chose the moving average window in weekly increments`(7, 14, 21)`, as the window gets larger, the data seems to get more smoothed out, which suggest a process of removing the seasonality to reveal the trend, now we can see clearly that the data have stable trend.
+
+### Weekly data
+
+-   13-MA
+
+```{r,warning=FALSE}
+autoplot(w_ts, series="Data") +
+  autolayer(ma(w_ts, 13), series="13-MA") +
+  xlab("Year") + ylab("Number of crimes") +
+  ggtitle("Violent crime time series from 2007 to 2022 using SMA") +
+  scale_colour_manual(values=c("Data"="grey","13-MA"="red"),
+                      breaks=c("Data","13-MA"))
+```
+
+-   26-MA
+
+```{r,warning=FALSE}
+autoplot(w_ts, series="Data") +
+  autolayer(ma(w_ts, 26), series="26-MA") +
+  xlab("Year") + ylab("Number of crimes") +
+  ggtitle("Violent crime time series from 2007 to 2022 using SMA") +
+  scale_colour_manual(values=c("Data"="grey","26-MA"="red"),
+                      breaks=c("Data","26-MA"))
+```
+
+-   For the weekly data, I chose moving average windows of quarterly increments`(13, 26)`, We can see that as the windows gets larger, the time series data gets more smoothed out as well, this suggests that the data might have quarterly seasonality.

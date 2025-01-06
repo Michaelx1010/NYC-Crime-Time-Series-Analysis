@@ -1,0 +1,740 @@
+---
+title: "Deep Learning for TS"
+format:
+  html:
+    page-layout: full
+    code-fold: true
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+bibliography: references.bib
+---
+
+## Introduction
+
+Traditional statistical methods, such as `ARIMA` and `SARIMA` models, have been extensively used for time series forecasting. However, the complex and often nonlinear nature of crime data makes it challenging for these traditional models to capture the underlying patterns accurately. This is where deep learning models come into play, offering a robust alternative with their ability to learn complex patterns from large datasets. In this study, we focus on employing deep learning techniques to analyze and predict violent crime time series data in NYC. Specifically, we explore three different types of neural network architectures: Recurrent Neural Networks `(RNN)`, Gated Recurrent Units `(GRU)`, and Long Short-Term Memory `(LSTM)` networks.
+
+**Recurrent Neural Networks (RNN):** `RNNs` are a class of neural networks that are particularly well-suited for sequential data, like time series. They can capture temporal dynamics, which is essential for understanding how crime trends evolve over time.
+
+**Gated Recurrent Units (GRU):** `GRUs` are a variation of RNNs that aim to solve the vanishing gradient problem often encountered in traditional RNNs. They are designed to retain information over extended periods, making them suitable for analyzing time series data where long-term dependencies are crucial.
+
+**Long Short-Term Memory (LSTM):** `LSTMs` are another advanced variant of `RNNs`, known for their effectiveness in learning long-term dependencies. They are particularly adept at handling the complexity and variability inherent in crime data, making them a promising tool for predicting violent crime trends.
+
+
+```{python}
+import warnings
+warnings.filterwarnings("ignore")
+import numpy as np
+import pandas as pd
+from tensorflow import keras
+from tensorflow.keras.layers import Dense, SimpleRNN, GRU, LSTM, Dropout
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+import matplotlib.pyplot as plt
+from tensorflow.keras import initializers
+from tensorflow.keras import regularizers
+from sklearn.metrics import mean_squared_error,mean_absolute_percentage_error,mean_absolute_error
+from math import sqrt
+```
+
+
+## Data Preparation
+
+For the deep learning model, we will be using the total violent crimes data we used in ARIMA/SARIMA model section.
+
+### Visualization of raw data
+```{python}
+df = pd.read_csv("./dataset/crimedata_week.csv")
+df.drop('offense_type', axis = 1)
+print(df.head())
+
+df = df.rename(columns={"week": "t", "Total_Crimes": "y"})
+df = df[["t","y"]]
+
+t=np.array([*range(0,df.shape[0])])
+x=np.array(df['y']).reshape(t.shape[0],1)
+feature_columns=[0] # columns to use as features
+target_columns=[0]  # columns to use as targets
+
+
+fig, ax = plt.subplots()
+for i in range(0,x.shape[1]):
+    ax.plot(t, x[:,i],'o',alpha = 0.5)
+    ax.plot(t, x[:,i],"-")
+ax.plot(t, 0*x[:,0],"-") # add baseline for reference 
+plt.show()
+```
+
+### Visualization of normalized data
+```{python}
+# Normalize the data
+x=(x-np.mean(x,axis=0))/np.std(x,axis=0)
+
+# visualize normalized data 
+fig, ax = plt.subplots()
+for i in range(0,x.shape[1]):
+    ax.plot(t, x[:,i],'o')
+    ax.plot(t, x[:,i],"-")
+ax.plot(t, 0*x[:,0],"-") # add baseline for reference 
+plt.show()
+```
+
+### Split data into train/test sets
+
+```{python}
+split_fraction=0.8
+cut=int(split_fraction*x.shape[0]) 
+tt=t[0:cut]; xt=x[0:cut]
+tv=t[cut:]; xv=x[cut:]
+
+# visualize normalized data 
+fig, ax = plt.subplots()
+for i in range(0,x.shape[1]):
+    ax.plot(tt, xt[:,i],'ro',alpha=0.25)
+    ax.plot(tt, xt[:,i],"g-")
+for i in range(0,x.shape[1]):
+    ax.plot(tv, xv[:,i],'bo',alpha=0.25)
+    ax.plot(tv, xv[:,i],"g-")
+plt.show()
+```
+
+
+### Form mini-batches for training/testing data
+```{python}
+# Time series mini-batch function
+def form_arrays(x,lookback=3,delay=1,step=1,feature_columns=[0],target_columns=[0],unique=False,verbose=False):
+    # verbose=True --> report and plot for debugging
+    # unique=True --> don't re-sample: 
+    # x1,x2,x3 --> x4 then x4,x5,x6 --> x7 instead of x2,x3,x4 --> x5
+
+    # initialize 
+    i_start=0; count=0; 
+    
+    # initialize output arrays with samples 
+    x_out=[]
+    y_out=[]
+    
+    # sequentially build mini-batch samples
+    while i_start+lookback+delay< x.shape[0]:
+        
+        # define index bounds
+        i_stop=i_start+lookback
+        i_pred=i_stop+delay
+        
+        # report if desired 
+        if verbose and count<2: print("indice range:",i_start,i_stop,"-->",i_pred)
+
+        # define arrays: 
+        # method-1: buggy due to indexing from left 
+        # numpy's slicing --> start:stop:step
+        # xtmp=x[i_start:i_stop+1:steps]
+        
+        # method-2: non-vectorized but cleaner
+        indices_to_keep=[]; j=i_stop
+        while  j>=i_start:
+            indices_to_keep.append(j)
+            j=j-step
+
+        # create mini-batch sample
+        xtmp=x[indices_to_keep,:]    # isolate relevant indices
+        xtmp=xtmp[:,feature_columns] # isolate desire features
+        ytmp=x[i_pred,target_columns]
+        x_out.append(xtmp); y_out.append(ytmp); 
+        
+        # report if desired 
+        if verbose and count<2: print(xtmp, "-->",ytmp)
+        if verbose and count<2: print("shape:",xtmp.shape, "-->",ytmp.shape)
+
+        # PLOT FIRST SAMPLE IF DESIRED FOR DEBUGGING    
+        if verbose and count<2:
+            fig, ax = plt.subplots()
+            ax.plot(x,'b-')
+            ax.plot(x,'bx')
+            ax.plot(indices_to_keep,xtmp,'go')
+            ax.plot(i_pred*np.ones(len(target_columns)),ytmp,'ro')
+            plt.show()
+            
+        # UPDATE START POINT 
+        if unique: i_start+=lookback 
+        i_start+=1; count+=1
+        
+    return np.array(x_out),np.array(y_out)
+
+# training
+L=25; S=1; D=1
+Xt,Yt=form_arrays(xt,lookback=L,delay=D,step=S,feature_columns=feature_columns,target_columns=target_columns,unique=False,verbose=True)
+
+# validation
+Xv,Yv=form_arrays(xv,lookback=L,delay=D,step=S,feature_columns=feature_columns,target_columns=target_columns,unique=False,verbose=True)
+```
+
+
+
+### Define the plot function and utility function for accuracy metrics
+
+```{python}
+def history_plot(history):
+    FS=18   #FONT SIZE
+    # PLOTTING THE TRAINING AND VALIDATION LOSS 
+    history_dict = history.history
+    loss_values = history_dict["loss"]
+    val_loss_values = history_dict["val_loss"]
+    epochs = range(1, len(loss_values) + 1)
+    plt.plot(epochs, loss_values, "bo", label="Training loss")
+    plt.plot(epochs, val_loss_values, "b", label="Validation loss")
+    plt.title("Training and validation loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.show()
+
+# UTILITY FUNCTION
+def regression_report(yt,ytp,yv,yvp):
+    print("---------- Regression report ----------")
+    
+    print("TRAINING:")
+    print(" MSE:",mean_squared_error(yt,ytp))
+    print(" MAE:",mean_absolute_error(yt,ytp))
+    # print(" MAPE:",mean_absolute_percentage_error(Yt,Ytp))
+    
+    # PARITY PLOT
+    fig, ax = plt.subplots()
+    ax.plot(yt,ytp,'ro')
+    ax.plot(yt,yt,'b-')
+    ax.set(xlabel='y_data', ylabel='y_predicted',
+        title='Training data parity plot (line y=x represents a perfect fit)')
+    plt.show()
+    
+    # PLOT PART OF THE PREDICTED TIME-SERIES
+    frac_plot=1.0
+    upper=int(frac_plot*yt.shape[0]); 
+    # print(int(0.5*yt.shape[0]))
+    fig, ax = plt.subplots()
+    ax.plot(yt[0:upper],'b-')
+    ax.plot(ytp[0:upper],'r-',alpha=0.5)
+    ax.plot(ytp[0:upper],'ro',alpha=0.25)
+    ax.set(xlabel='index', ylabel='y(t (blue=actual & red=prediction)', title='Training: Time-series prediction')
+    plt.show()
+
+      
+    print("VALIDATION:")
+    print(" MSE:",mean_squared_error(yv,yvp))
+    print(" MAE:",mean_absolute_error(yv,yvp))
+    # print(" MAPE:",mean_absolute_percentage_error(Yt,Ytp))
+    
+    # PARITY PLOT 
+    fig, ax = plt.subplots()
+    ax.plot(yv,yvp,'ro')
+    ax.plot(yv,yv,'b-')
+    ax.set(xlabel='y_data', ylabel='y_predicted',
+        title='Validation data parity plot (line y=x represents a perfect fit)')
+    plt.show()
+    
+    # PLOT PART OF THE PREDICTED TIME-SERIES
+    upper=int(frac_plot*yv.shape[0])
+    fig, ax = plt.subplots()
+    ax.plot(yv[0:upper],'b-')
+    ax.plot(yvp[0:upper],'r-',alpha=0.5)
+    ax.plot(yvp[0:upper],'ro',alpha=0.25)
+    ax.set(xlabel='index', ylabel='y(t) (blue=actual & red=prediction)', title='Validation: Time-series prediction')
+    plt.show()
+```
+
+
+
+## Model Training
+::: {.panel-tabset}
+
+# RNN
+
+## Without regularization
+```{python}
+# RESHAPE INTO A DATA FRAME 
+Xt1=Xt.reshape(Xt.shape[0],Xt.shape[1]*Xt.shape[2])
+Xv1=Xv.reshape(Xv.shape[0],Xv.shape[1]*Xv.shape[2])
+
+# # HYPERPARAMETERS 
+optimizer="rmsprop"
+loss_function="MeanSquaredError" 
+learning_rate=0.001
+numbers_epochs=200 #100
+L2=0 #1e-4
+input_shape=(Xt.shape[1],Xt.shape[2])
+
+# # batch_size=1                       # stocastic training
+# # batch_size=int(len(x_train)/2.)    # mini-batch training
+batch_size=len(Xt1)              # batch training
+
+# BUILD MODEL
+recurrent_hidden_units=32
+
+# CREATE MODEL
+model = keras.Sequential()
+
+# ADD RECURRENT LAYER
+
+# #COMMENT/UNCOMMENT TO USE RNN, LSTM,GRU
+#model.add(LSTM(
+#model.add(GRU(
+model.add(SimpleRNN(
+units=recurrent_hidden_units,
+return_sequences=False,
+input_shape=input_shape, 
+# recurrent_dropout=0.8,
+activation='relu')
+          ) 
+     
+# NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# MODEL SUMMARY
+print(model.summary()); #print(x_train.shape,y_train.shape)
+# # print("initial parameters:", model.get_weights())
+
+# # COMPILING THE MODEL 
+opt = keras.optimizers.RMSprop(learning_rate=learning_rate)
+model.compile(optimizer=opt, loss=loss_function)
+
+# TRAINING YOUR MODEL
+history = model.fit(Xt,
+                    Yt,
+                    epochs=numbers_epochs,
+                    batch_size=batch_size, verbose=False,
+                    validation_data=(Xv, Yv))
+# History plot
+history_plot(history)
+
+# Predictions 
+Ytp=model.predict(Xt)
+Yvp=model.predict(Xv) 
+
+# REPORT
+regression_report(Yt,Ytp,Yv,Yvp)  
+RNN_e = sqrt(mean_squared_error(Yt, Ytp))
+```
+
+
+## With regularization
+
+```{python}
+
+# # HYPERPARAMETERS 
+optimizer="rmsprop"
+loss_function="MeanSquaredError" 
+learning_rate=0.001
+numbers_epochs=200 #100
+L2=0 #1e-4
+input_shape=(Xt.shape[1],Xt.shape[2])
+
+# # batch_size=1                       # stocastic training
+# # batch_size=int(len(x_train)/2.)    # mini-batch training
+batch_size=len(Xt1)              # batch training
+
+# BUILD MODEL
+recurrent_hidden_units=32
+
+# CREATE MODEL
+model = keras.Sequential()
+
+# ADD RECURRENT LAYER
+
+# #COMMENT/UNCOMMENT TO USE RNN, LSTM,GRU
+#model.add(LSTM(
+#model.add(GRU(
+model.add(SimpleRNN(
+units=recurrent_hidden_units,
+return_sequences=False,
+input_shape=input_shape, 
+recurrent_regularizer=regularizers.L2(L2),
+# recurrent_dropout=0.8,
+activation='relu')
+          ) 
+     
+# NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# MODEL SUMMARY
+print(model.summary()); #print(x_train.shape,y_train.shape)
+# # print("initial parameters:", model.get_weights())
+
+# # COMPILING THE MODEL 
+opt = keras.optimizers.RMSprop(learning_rate=learning_rate)
+model.compile(optimizer=opt, loss=loss_function)
+
+# TRAINING YOUR MODEL
+history = model.fit(Xt,
+                    Yt,
+                    epochs=numbers_epochs,
+                    batch_size=batch_size, verbose=False,
+                    validation_data=(Xv, Yv))
+# History plot
+history_plot(history)
+
+# Predictions 
+Ytp=model.predict(Xt)
+Yvp=model.predict(Xv) 
+
+# REPORT
+regression_report(Yt,Ytp,Yv,Yvp) 
+
+RNN_e_r = sqrt(mean_squared_error(Yt, Ytp))
+```
+
+- According to the model results, `RNN` model with regularization has larger `MSE` and `MAE` values for both traning and test sets. This makes sense since the concept of adding regularization to deep learning model is to add a penalty to the loss function, precenting the model to learn the data "too well", and enhance generalization.
+
+
+
+
+# GRUS
+
+## Without regularization
+
+```{python}
+# RESHAPE INTO A DATA FRAME 
+Xt1=Xt.reshape(Xt.shape[0],Xt.shape[1]*Xt.shape[2])
+Xv1=Xv.reshape(Xv.shape[0],Xv.shape[1]*Xv.shape[2])
+
+# # HYPERPARAMETERS 
+optimizer="rmsprop"
+loss_function="MeanSquaredError" 
+learning_rate=0.001
+numbers_epochs=200 #100
+L2=0 #1e-4
+input_shape=(Xt.shape[1],Xt.shape[2])
+
+# # batch_size=1                       # stocastic training
+# # batch_size=int(len(x_train)/2.)    # mini-batch training
+batch_size=len(Xt1)              # batch training
+
+# BUILD MODEL
+recurrent_hidden_units=32
+
+# CREATE MODEL
+model = keras.Sequential()
+
+# ADD RECURRENT LAYER
+
+# #COMMENT/UNCOMMENT TO USE RNN, LSTM,GRU
+#model.add(LSTM(
+model.add(GRU(
+#model.add(SimpleRNN(
+units=recurrent_hidden_units,
+return_sequences=False,
+input_shape=input_shape, 
+# recurrent_dropout=0.8,
+activation='relu')
+          ) 
+     
+# NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# MODEL SUMMARY
+print(model.summary()); #print(x_train.shape,y_train.shape)
+# # print("initial parameters:", model.get_weights())
+
+# # COMPILING THE MODEL 
+opt = keras.optimizers.RMSprop(learning_rate=learning_rate)
+model.compile(optimizer=opt, loss=loss_function)
+
+# TRAINING YOUR MODEL
+history = model.fit(Xt,
+                    Yt,
+                    epochs=numbers_epochs,
+                    batch_size=batch_size, verbose=False,
+                    validation_data=(Xv, Yv))
+# History plot
+history_plot(history)
+
+# Predictions 
+Ytp=model.predict(Xt)
+Yvp=model.predict(Xv) 
+
+# REPORT
+regression_report(Yt,Ytp,Yv,Yvp)  
+GRU_e = sqrt(mean_squared_error(Yt, Ytp))
+```
+
+
+## With regularization
+
+```{python}
+# # HYPERPARAMETERS 
+optimizer="rmsprop"
+loss_function="MeanSquaredError" 
+learning_rate=0.001
+numbers_epochs=200 #100
+L2=0 #1e-4
+input_shape=(Xt.shape[1],Xt.shape[2])
+
+# # batch_size=1                       # stocastic training
+# # batch_size=int(len(x_train)/2.)    # mini-batch training
+batch_size=len(Xt1)              # batch training
+
+# BUILD MODEL
+recurrent_hidden_units=32
+
+# CREATE MODEL
+model = keras.Sequential()
+
+# ADD RECURRENT LAYER
+
+# #COMMENT/UNCOMMENT TO USE RNN, LSTM,GRU
+#model.add(LSTM(
+model.add(GRU(
+#model.add(SimpleRNN(
+units=recurrent_hidden_units,
+return_sequences=False,
+input_shape=input_shape, 
+recurrent_regularizer=regularizers.L2(L2),
+# recurrent_dropout=0.8,
+activation='relu')
+          ) 
+     
+# NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# MODEL SUMMARY
+print(model.summary()); #print(x_train.shape,y_train.shape)
+# # print("initial parameters:", model.get_weights())
+
+# # COMPILING THE MODEL 
+opt = keras.optimizers.RMSprop(learning_rate=learning_rate)
+model.compile(optimizer=opt, loss=loss_function)
+
+# TRAINING YOUR MODEL
+history = model.fit(Xt,
+                    Yt,
+                    epochs=numbers_epochs,
+                    batch_size=batch_size, verbose=False,
+                    validation_data=(Xv, Yv))
+# History plot
+history_plot(history)
+
+# Predictions 
+Ytp=model.predict(Xt)
+Yvp=model.predict(Xv) 
+
+# REPORT
+regression_report(Yt,Ytp,Yv,Yvp) 
+GRU_e_r = sqrt(mean_squared_error(Yt, Ytp))
+```
+
+- According to the model results, `GRU` model with regularization has larger `MSE` and `MAE` values for both traning and test sets. This makes sense since the concept of adding regularization to deep learning model is to add a penalty to the loss function, precenting the model to learn the data "too well", and enhance generalization.
+
+
+# LSTM
+
+## Without regularization
+
+```{python}
+
+# RESHAPE INTO A DATA FRAME 
+Xt1=Xt.reshape(Xt.shape[0],Xt.shape[1]*Xt.shape[2])
+Xv1=Xv.reshape(Xv.shape[0],Xv.shape[1]*Xv.shape[2])
+
+# # HYPERPARAMETERS 
+optimizer="rmsprop"
+loss_function="MeanSquaredError" 
+learning_rate=0.001
+numbers_epochs=200 #100
+L2=0 #1e-4
+input_shape=(Xt.shape[1],Xt.shape[2])
+
+# # batch_size=1                       # stocastic training
+# # batch_size=int(len(x_train)/2.)    # mini-batch training
+batch_size=len(Xt1)              # batch training
+
+# BUILD MODEL
+recurrent_hidden_units=32
+
+# CREATE MODEL
+model = keras.Sequential()
+
+# ADD RECURRENT LAYER
+
+# #COMMENT/UNCOMMENT TO USE RNN, LSTM,GRU
+model.add(LSTM(
+#model.add(GRU(
+#model.add(SimpleRNN(
+units=recurrent_hidden_units,
+return_sequences=False,
+input_shape=input_shape, 
+# recurrent_dropout=0.8,
+activation='relu')
+          ) 
+     
+# NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# MODEL SUMMARY
+print(model.summary()); #print(x_train.shape,y_train.shape)
+# # print("initial parameters:", model.get_weights())
+
+# # COMPILING THE MODEL 
+opt = keras.optimizers.RMSprop(learning_rate=learning_rate)
+model.compile(optimizer=opt, loss=loss_function)
+
+# TRAINING YOUR MODEL
+history = model.fit(Xt,
+                    Yt,
+                    epochs=numbers_epochs,
+                    batch_size=batch_size, verbose=False,
+                    validation_data=(Xv, Yv))
+# History plot
+history_plot(history)
+
+# Predictions 
+Ytp=model.predict(Xt)
+Yvp=model.predict(Xv) 
+
+# REPORT
+regression_report(Yt,Ytp,Yv,Yvp)  
+LSTM_e = sqrt(mean_squared_error(Yt, Ytp))
+```
+
+
+## With regularization
+
+```{python}
+# # HYPERPARAMETERS 
+optimizer="rmsprop"
+loss_function="MeanSquaredError" 
+learning_rate=0.001
+numbers_epochs=200 #100
+L2=0 #1e-4
+input_shape=(Xt.shape[1],Xt.shape[2])
+
+# # batch_size=1                       # stocastic training
+# # batch_size=int(len(x_train)/2.)    # mini-batch training
+batch_size=len(Xt1)              # batch training
+
+# BUILD MODEL
+recurrent_hidden_units=32
+
+# CREATE MODEL
+model = keras.Sequential()
+
+# ADD RECURRENT LAYER
+
+# #COMMENT/UNCOMMENT TO USE RNN, LSTM,GRU
+model.add(LSTM(
+#model.add(GRU(
+#model.add(SimpleRNN(
+units=recurrent_hidden_units,
+return_sequences=False,
+input_shape=input_shape, 
+recurrent_regularizer=regularizers.L2(L2),
+# recurrent_dropout=0.8,
+activation='relu')
+          ) 
+     
+# NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# MODEL SUMMARY
+print(model.summary()); #print(x_train.shape,y_train.shape)
+# # print("initial parameters:", model.get_weights())
+
+# # COMPILING THE MODEL 
+opt = keras.optimizers.RMSprop(learning_rate=learning_rate)
+model.compile(optimizer=opt, loss=loss_function)
+
+# TRAINING YOUR MODEL
+history = model.fit(Xt,
+                    Yt,
+                    epochs=numbers_epochs,
+                    batch_size=batch_size, verbose=False,
+                    validation_data=(Xv, Yv))
+# History plot
+history_plot(history)
+
+# Predictions 
+Ytp=model.predict(Xt)
+Yvp=model.predict(Xv) 
+
+# REPORT
+regression_report(Yt,Ytp,Yv,Yvp) 
+LSTM_e_r = sqrt(mean_squared_error(Yt, Ytp))
+```
+
+- According to the model results, `LSTM` model with regularization has larger `MSE` and `MAE` values for both traning and test sets. This makes sense since the concept of adding regularization to deep learning model is to add a penalty to the loss function, precenting the model to learn the data "too well", and enhance generalization.
+
+
+:::
+
+
+
+
+## Evaluation
+
+- Comparison of `RMSE` of all three models
+```{python}
+import seaborn as sns
+# Creating a DataFrame to hold the data
+data = {
+    'Model': ['RNN', 'RNN with Regularization', 'GRU', 'GRU with Regularization', 'LSTM', 'LSTM with Regularization'],
+    'RMSE': [RNN_e, RNN_e_r, GRU_e, GRU_e_r, LSTM_e, LSTM_e_r]
+}
+
+df = pd.DataFrame(data)
+
+# Display the DataFrame
+print(df)
+
+# Set the palette to have different colors for each bar
+palette = sns.color_palette("hsv", len(df))
+
+# Plotting using seaborn
+plt.figure(figsize=(10,6))
+sns.barplot(y='RMSE', x='Model', data=df, palette=palette)
+plt.xlabel('RMSE')
+plt.ylabel('Model')
+plt.title('Comparison of RMSE for RNN, GRU and LSTM with and without regularization')
+plt.show()
+
+```
+
+- Based on the model diagnostics with `RMSE`, we can see that the all three deep learning model have similar accuracy, with `LSTM` model outperforms the other two with a slight lower `RMSE` on both with and without regularization. 
+
+- Also, from the forcasting plots, we can see all three deep learning models can accurately forcast up to approximately 80 index, for my data set, this indicates accurate predictions up to `80` weeks of violent crimes.
+
+
+## Comparison with traditional TS models
+
+- In order to compare with the `SARIMA(0,2,2)(0,1,0)52`, we need to denormalize the `RMSE` result from deep learning models to the normal scale.
+
+![Forcast plots for SARIMA(0,2,2)(0,1,0)52](images/sarima.png)
+```{python}
+data = pd.read_csv("./dataset/crimedata_week.csv")
+data.drop('offense_type', axis = 1)
+std = np.std(data['Total_Crimes'])
+
+# Denormalizing the RMSE for the single time series
+denormalized_rmse = df['RMSE'] * std
+
+# Update the DataFrame with denormalized RMSE
+df['Denormalized RMSE'] = denormalized_rmse
+df
+
+```
+
+```{python}
+# Add a row for SARIMA model for plotting
+s_rmse = 67.19183
+sa = {'Model': 'SARIMA', 'RMSE': s_rmse, 'Denormalized RMSE': s_rmse}
+
+sa = pd.DataFrame([sa])
+
+# Concatenate the new row to the existing DataFrame
+df = pd.concat([df, sa], ignore_index=True)
+
+# Plotting using seaborn
+plt.figure(figsize=(10,6))
+sns.barplot(y='Denormalized RMSE', x='Model', data=df, palette=palette)
+plt.xlabel('RMSE')
+plt.ylabel('Model')
+plt.title('Comparison of RMSE for RNN, GRU, LSTM with and without regularization and SARIMA model')
+plt.show()
+```
+
+- We can clearly see that the `RMSE` for `SARIMA(0,2,2)(0,1,0)52` is significantly higher than that of the deep learning modes, indicating that deep learning models have a higher accuracy than traditional time series model for my data set.

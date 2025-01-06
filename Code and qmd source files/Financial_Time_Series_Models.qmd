@@ -1,0 +1,282 @@
+---
+title: "Financial Time Series Models (ARCH/GARCH)"
+format:
+  html:
+    page-layout: full
+    code-fold: true
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo = TRUE,
+    message = FALSE,
+    warning = FALSE)
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+library(TSA)
+library(fGarch) 
+library(dynlm)
+library(tidyverse)
+library(ggplot2)
+library(forecast)
+library(astsa) 
+library(xts)
+library(tseries)
+library(fpp2)
+library(fma)
+library(lubridate)
+library(tidyverse)
+library(TSstudio)
+library(quantmod)
+library(tidyquant)
+library(plotly)
+library(ggplot2)
+```
+
+## Introduction
+
+The relationship between crime and the stock performance of companies such as Walmart is an intriguing and multifaceted subject of study. Walmart, as one of the world's largest retail giants, operates in a diverse range of locations, each with its unique set of challenges related to crime and security. Understanding how crime rates can impact the stock price of a company like Walmart requires a comprehensive analysis that takes into account not only economic and market dynamics but also the local socio-economic environment, security measures, and loss prevention strategies employed by the company. In this context, the application of ARCH/GARCH (Autoregressive Conditional Heteroskedasticity/Generalized Autoregressive Conditional Heteroskedasticity) models becomes a valuable tool for assessing the volatility and risk associated with Walmart's stock performance, as it allows us to capture and model the time-varying volatility patterns in the stock returns, potentially shedding light on the impact of crime-related events on the company's stock price.
+
+## ARCH/GARCH model
+
+### Data Preparation
+
+-   Load the Walmart stock prices data
+
+```{r, warning=FALSE, message=FALSE}
+# Load the Stock Price data
+data <- getSymbols("WMT",auto.assign = FALSE, from = "2016-10-01",src="yahoo") 
+head(data)
+```
+
+-   Closing price visualization
+
+```{r}
+chartSeries(data, theme = chartTheme("white"), # Theme
+            bar.type = "hlc",  # High low close 
+            up.col = "green",  # Up candle color
+            dn.col = "red")   # Down candle color)
+```
+
+-   Return visualization
+
+```{r}
+library(imputeTS)
+data <- na_ma(data, k = 4, weighting = "exponential")
+log(data$WMT.Adjusted ) %>% diff() %>% chartSeries()
+```
+
+-   Stationarity: The initial plot illustrates upward trends in Walmart's stock prices, accompanied by noticeable fluctuations in volatility over time.
+
+-   Volatility: The plot shows periods of increased volatility, as evidenced by the taller spikes, which could correspond to specific events or announcements affecting the stock's price. The clustering of large spikes suggests volatility clustering, a common phenomenon in financial time series where large changes tend to be followed by large changes (of either sign) and small changes tend to be followed by small changes.
+
+-   Calculate and plot the returns
+
+```{r}
+# Transform data into a time series object
+mts <- ts(data$WMT.Adjusted, start=decimal_date(as.Date("2016-10-03")), frequency = 365.25)
+
+# calculate the returns
+returns = log(mts) %>% diff()
+
+# Plot the returns
+autoplot(returns) +ggtitle("Walmart Returns")
+```
+
+-   ACF/PACF plots of the returns
+
+```{r}
+ggAcf(returns,40)
+```
+
+```{r}
+ggPacf(returns,40)
+```
+
+-   We could see clear stationarity based on the ACF/PACF plots.
+
+### ACF plots of absolute values of the returns and squared values
+
+```{r}
+ggAcf(abs(returns),40)
+```
+
+```{r}
+ggAcf(returns^2,40)
+```
+
+-   We can see clear correlation in both plots. This correlation is coming from the correlation in conditional variation.
+
+### Model Fitting(ARIMA + GARCH)
+
+-   ArchTest
+
+```{r}
+library(FinTS)
+ArchTest(returns, lags=1, demean=TRUE)
+```
+
+-   Because the p-value is \< 0.05, we reject the null hypothesis and conclude the presence of ARCH(1) effects.
+
+-   Fitting the ARIMA Model
+
+```{r}
+ggAcf(returns,40)
+```
+
+```{r}
+ggPacf(returns, 40)
+```
+
+-   Based on the ACF/PACF plots, we set p = 0 \~ 5, q = 0 \~ 5, d = 0 \~ 2.
+
+```{r}
+ARIMA.c=function(p1,p2,q1,q2,data){
+temp=c()
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*70),nrow=70)
+
+
+for (p in p1:p2)#
+{
+  for(q in q1:q2)#
+  {
+    for(d in 1:2)#
+    {
+      
+      if(p+d+q<=7)
+      {
+        
+        model<- Arima(data,order=c(p,d,q))
+        ls[i,]= c(p,d,q,model$aic,model$bic,model$aicc)
+        i=i+1
+  
+        
+      }
+      
+    }
+  }
+}
+
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+temp
+}
+```
+
+```{r}
+output <- ARIMA.c(0,5,0,5,data=log(mts))
+output
+```
+
+```{r}
+output[which.min(output$AIC),]
+```
+
+```{r}
+output[which.min(output$BIC),]
+```
+
+```{r}
+output[which.min(output$AICc),]
+```
+
+-   Using auto.arima()
+
+```{r}
+auto.arima(log(mts))
+```
+
+-   Here, we have ARIMA(3, 0, 3), ARIMA(0, 1, 0), ARIMA(0, 1, 1).
+
+### Model Diagnostics
+
+```{r}
+data=log(mts)
+sarima(data, 0,1,0)
+```
+
+```{r}
+sarima(data, 4,1,2)
+```
+
+```{r}
+sarima(data, 0,1,1)
+```
+
+-   I opted for an ARIMA(0, 1, 0) model due to the lack of significance in the coefficients of the other two models. However, it's evident that further modeling is warranted, primarily because the standard residuals do not conform to an ideal normal distribution. As a next step, I plan to conduct GARCH modeling to better capture and analyze the volatility patterns in the data.
+
+
+### Fit the GARCH Model
+
+-   fit the ARIMA model and fitting a GARCH model to the residuals of the ARIMA model
+
+```{r}
+arima.fit<-Arima(data,order=c(0,1,0),include.drift = TRUE)
+arima.res<-arima.fit$residuals
+
+acf(arima.res)
+```
+
+```{r}
+ggAcf(arima.res^2, 40)
+```
+
+```{r}
+ggPacf(arima.res^2, 40)
+```
+
+```{r}
+model <- list() ## set counter
+cc <- 1
+for (p in 1:7) {
+  for (q in 1:7) {
+  
+model[[cc]] <- garch(arima.res,order=c(q,p),trace=F)
+cc <- cc + 1
+}
+} 
+
+## get AIC values for model evaluation
+GARCH_AIC <- sapply(model, AIC) ## model with lowest AIC is the best
+which(GARCH_AIC == min(GARCH_AIC))
+```
+
+```{r}
+model[[which(GARCH_AIC == min(GARCH_AIC))]]
+```
+
+```{r}
+summary(garchFit(~garch(1,1), arima.res,trace = F)) 
+```
+
+-   All Coefficients are significant, also the Ljung-box test no obvious auto-correlation within the residuals, indicating a good overall fit to the data.
+
+### Final Model
+
+```{r}
+summary(arima.fit<-Arima(data,order=c(0,1,0),include.drift = TRUE))
+```
+
+```{r}
+summary(final.fit <- garchFit(~garch(1,1), arima.res,trace = F)) 
+```
+
+### Model Equation
+
+- Based on the model diagnostics, the equations of the final model is given by:
+
+$x_t = 0.0005 + \varepsilon_t$
+
+$z_t = \sigma_t \varepsilon_t$
+
+$\sigma^2_t = 0.000024167 + 0.1379 z^2_{t-1} + 0.74066 \sigma^2_{t-1}$

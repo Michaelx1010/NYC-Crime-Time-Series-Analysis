@@ -1,0 +1,263 @@
+---
+title: "Data Visualization"
+format:
+  html:
+    page-layout: full
+    code-fold: true
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+bibliography: references.bib
+---
+
+## Use the crimedata API in R to extract crime data of NYC from 2007 to 2022.
+
+```{r, message=FALSE, warning=FALSE}
+library(crimedata)
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(ggthemes)
+library(plotly)
+library(DT)
+library(RColorBrewer)
+
+data <- read_csv("./dataset/crimedata_NYC.csv")
+datatable(head(data))
+```
+
+```{r, warning=FALSE}
+# Convert datetime to date by extracting just the date part
+data$date_single <- as.Date(data$date_single)
+
+violent_crimes <- c("rape (except statutory rape)", "personal robbery", "aggravated assault", 
+                    "murder and nonnegligent manslaughter", "arson", "kidnapping/abduction")
+
+# Filter the data to include only violent crimes
+violent_crime <- data[data$offense_type %in% violent_crimes, ]
+
+# Sum up the counts by date
+violent_crime_total <- violent_crime %>%
+  group_by(date_single) %>%
+  summarise(Count = n())
+
+
+violent_crime_t <- violent_crime %>%
+  select(offense_type, date_single)
+
+# Sum up the counts by date for each category
+violent_crime_t <- violent_crime_t %>%
+  group_by(date_single, offense_type) %>%
+  summarise(Total_Crimes = n(), .groups = 'drop')
+
+violent_crime_t <- violent_crime_t %>%
+  mutate(offense_type = case_when(
+    offense_type == "kidnapping/abduction" ~ "kidnap",
+    offense_type == "rape (except statutory rape)" ~ "rape",
+    offense_type == "murder and nonnegligent manslaughter" ~ "murder",
+    offense_type == "personal robbery" ~ "robbery",
+    TRUE ~ offense_type 
+  ))
+
+violent_crime_total$offense_type <- "total"
+colnames(violent_crime_total)[2] <- "Total_Crimes"
+
+v_crime <- rbind(violent_crime_t, violent_crime_total)
+
+v_crime <- v_crime %>%
+  arrange(date_single, offense_type)
+
+# Display the result
+datatable(v_crime)
+
+# Save the data
+#write.csv(v_crime, file = "dataset/crimedata_total.csv", row.names = FALSE)
+```
+
+## Total violent crimes visualization
+
+```{r, warning=FALSE, message=FALSE}
+t1 <- ggplot(data = v_crime, aes(x = date_single, y = Total_Crimes, color = offense_type)) +
+  geom_line(alpha = 0.5, size = 0.6) +  
+  geom_smooth(se = FALSE, method = "loess", span = 0.2) +  
+  labs(title = "Total Violent Crime Time Series from 2007 to 2022 in NYC",
+       x = "Date",
+       y = "Number of Crimes") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom",
+        legend.direction = "horizontal") +
+  scale_color_manual(values = c("aggravated assault" = "red", "arson" = "orange", 
+                                "kidnap" = "green", "murder" = "blue", 
+                                "rape" = "purple", 
+                                "robbery" = "gray",
+                                "total" = "black")) 
+
+ggplotly(t1)
+```
+
+-   Based on the interactive visualization, `Aggravated assault`, indicated as red line plot, appears to be the most common violent crime category among all,`Total violent crime` is the sum of all violent crimes, and is represented by the line in black. Interestingly, the `Robbery` trend is in a decline trend indicating drops in this type of criminal activity through out the time frame. Other crimes such as `arson`, `kidnap`, `murder`, and `rape`are presented with much less frequency.
+
+## Data visualization for each sub-category
+
+```{r, message=FALSE}
+crime_categories <- c("total","robbery","kidnap", "aggravated assault", "arson", "rape", "murder")
+
+# Empty list to store plots
+plot_list <- list()
+
+# Loop through each crime category and create a plot
+for (crime in crime_categories) {
+  a <- v_crime %>%
+    filter(offense_type == crime)
+
+  plot <- ggplot(data = a, aes(x = date_single, y = Total_Crimes)) +
+    geom_line() +
+    labs(title = paste(crime, "crime time series from 2007 to 2022"),
+         x = "Date",
+         y = "Number of Crimes") +
+    theme_minimal() +
+    geom_line(alpha = 0.5, size = 0.6) +
+    geom_smooth(se = FALSE, method = "loess", span = 0.2) 
+  plot_list[[crime]] <- ggplotly(plot)
+}
+
+```
+
+### Total
+
+```{r}
+plot_list[["total"]]
+```
+
+-   This plot illustrates the total violent crime trends in New York City from 2007 to 2022, This blue trend line smooths out the variations. While we can see clear oscillations in crime rates, denoted by periodic rises and falls, the overall trajectory does not display a long-term increase or decrease. The data suggests that despite various short-term fluctuations, New York City's violent crime rate has maintained relatively consistent through out the time frame.
+
+### Robbery
+
+```{r}
+plot_list[["robbery"]]
+```
+
+-   This plot illustrates the robbery crime trends in New York City across from 2007 to 2022, This blue trend line smooths out the variations. While we can see clear oscillations in crime rates, The trend shows a consistently decline until around at the end of 2020, the robbery crimes trend started a upward trend, this is interesting since the timeline matches the outbreak of COVID-19.
+
+### Kidnap/Rape/Murder/Arson
+
+```{r}
+plot_list[["kidnap"]]
+```
+
+```{r}
+plot_list[["rape"]]
+```
+
+```{r}
+plot_list[["murder"]]
+```
+
+```{r}
+plot_list[["arson"]]
+```
+
+-   All plots above do not illustrate any obvious upward/downward trend.
+
+### Aggravated Assault
+
+```{r}
+plot_list[["aggravated assault"]]
+```
+
+-   This plot illustrates the aggravated assault crime trends in New York City from 2007 to 2022, This blue trend line smooths out the variations. While we can see clear oscillations in crime rates. The trend shows a steadily increase until around at the end of 2020, the slope of aggravated assault crimes increases, this is interesting since the timeline matches the outbreak of COVID-19.
+
+## Crime data map of violent crimes in NYC on 01/01/2008
+
+- This map visualization is generated using the geographical varible obtained from the crime data base.
+
+```{r}
+data_test <- data[data$offense_type %in% violent_crimes, ]
+
+data_test$date <- as.Date(data_test$date_single)
+
+data_test <- data_test %>%
+  filter(date == "2008-01-01")
+
+# Convert offense_type to a factor
+data_test$offense_type <- as.factor(data_test$offense_type)
+
+# Create a custom color scale for each offense type
+color_palette <- brewer.pal(length(unique(data_test$offense_type)), "Dark2")
+color_scale <- setNames(color_palette, levels(data_test$offense_type))
+
+# Map offense_type to corresponding color
+data_test$color <- color_scale[data_test$offense_type]
+
+# Create the plot with the custom color scale
+fig <- plot_ly(
+  data = data_test,
+  type = "scattermapbox",
+  mode = "markers",
+  lon = ~longitude,
+  lat = ~latitude,
+  text = ~paste("Date: ", date, "<br>Crime Type: ", offense_type),
+  marker = list(
+    size = 10,
+    color = ~color
+  )
+) %>%
+  layout(
+    mapbox = list(
+      center = list(lon = -73.95, lat = 40.75),
+      zoom = 12,
+      style = "open-street-map"
+    )
+  )
+
+fig
+```
+
+
+
+## Crime data map of violent crimes in NYC on 08/2021
+
+- This map visualization is generated using the geographical varible obtained from the crime data base.
+
+```{r}
+data_test <- data[data$offense_type %in% violent_crimes, ]
+
+data_test$date <- as.Date(data_test$date_single)
+
+data_test <- data_test %>%
+  filter(date >= "2021-08-01" & date <= "2021-09-01")
+
+# Convert offense_type to a factor
+data_test$offense_type <- as.factor(data_test$offense_type)
+
+# Create a custom color scale for each offense type
+color_palette <- brewer.pal(length(unique(data_test$offense_type)), "Dark2")
+color_scale <- setNames(color_palette, levels(data_test$offense_type))
+
+# Map offense_type to corresponding color
+data_test$color <- color_scale[data_test$offense_type]
+
+# Create the plot with the custom color scale
+fig <- plot_ly(
+  data = data_test,
+  type = "scattermapbox",
+  mode = "markers",
+  lon = ~longitude,
+  lat = ~latitude,
+  text = ~paste("Date: ", date, "<br>Crime Type: ", offense_type),
+  marker = list(
+    size = 10,
+    color = ~color
+  )
+) %>%
+  layout(
+    mapbox = list(
+      center = list(lon = -73.95, lat = 40.75),
+      zoom = 12,
+      style = "open-street-map"
+    )
+  )
+
+fig
+```

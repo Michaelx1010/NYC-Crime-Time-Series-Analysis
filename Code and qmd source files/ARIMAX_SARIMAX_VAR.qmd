@@ -1,0 +1,1531 @@
+---
+title: "ARIMAX/SARIMAX/VAR"
+format:
+  html:
+    page-layout: full
+    code-fold: true
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+bibliography: references.bib
+---
+
+## Literature review
+
+In order to choose appropriate variables for `ARIMAX` (AutoRegressive Integrated Moving Average with exogenous variables), `SARIMAX` (Seasonal ARIMAX), and `VAR` (Vector Autoregression) models, it is essential to conduct a literature review and identify relevant factors that may influence the time series of interest. The articles provided earlier cover diverse aspects of crime and its determinants, and they can guide the selection of variables for modeling.
+
+1.  `Unemployment:` The article edmark2005unemployment discussing the effects of unemployment on property crime rates in Swedish counties during the period 1988--1999 highlights the potential impact of economic factors on crime. Unemployment rates can be a crucial variable to consider in the models.
+
+2.  `Demographic Changes:` The article @hipp2007income exploring the effects of neighborhood inequality and heterogeneity on crime rates emphasizes the significance of racial/ethnic heterogeneity. Demographic variables, especially those related to the composition of the population, could be relevant.
+
+3.  `Education:` The study @groot2007effects investigating the effects of education on criminal behavior suggests a negative correlation between education and certain types of crime. Educational attainment might be an important variable to include in the models.
+
+4.  `Income Inequality:` The article @groot2007effects examining the effects of income inequality and heterogeneity on crime rates identifies income inequality as a significant factor. Including measures of income inequality may be crucial in understanding crime dynamics.
+
+5.  `Social Norms:` The article @groot2007effects studying the impact of education on norms and attitudes towards offenses and crime reveals that higher education levels are associated with more permissive attitudes. Social norms could be a valuable variable to consider.
+
+6.  `Pandemic Influence:` The article @boman2020covidcrime explores the impact of the COVID-19 pandemic on crime rates in the United States. The unprecedented lockdowns and societal disruptions during the pandemic have likely introduced unique dynamics to criminal activities. Understanding the specific effects of the pandemic on crime becomes paramount in the analytical models.
+
+## Variables for ARIMAX/SARIMAX Models
+
+-   Dependent Variable: violent crimes.
+
+-   Exogenous Variables: Unemployment Rates, Demographic Variables (e.g., Racial/Ethnic Composition), Educational Attainment, COVID-19 data.
+
+-   Seasonal Components (for SARIMAX):
+
+    -   Considering the seasonality of violent crimes in NYC, include seasonal components in SARIMAX models
+
+## Variables for VAR Models
+
+-   Multiple Time Series Variables: Weekly violent Crimes, Unemployment Rates, Demographic Variables, Education Levels, climate data
+
+## Models Overlook
+
+-   Model 1 (ARIMAX/SARIMAX):
+
+    -   Dependent Variable: Violent crimes.
+    -   Independent Variables: COVID-19
+
+-   Model 2 (VAR):
+
+    -   Dependent Variable: Violent crimes.
+    -   Independent Variables: Education, Income Inequality.
+
+-   Model 3 (VAR):
+
+    -   Dependent Variable: Crimes.
+    -   Independent Variables: COVID-19.
+
+-   Model 4 (ARIMAX/SARIMAX):
+
+    -   Dependent Variable: assualt crimes.
+    -   Independent Variables: COVID-19
+
+-   Model 5 (VAR):
+
+    -   Dependent Variable: assault crimes.
+    -   Independent Variables: Education, Income Inequality.
+
+-   Model 6 (VAR):
+
+    -   Dependent Variable: assaut crimes.
+    -   Independent Variables: COVID-19.
+
+::: panel-tabset
+# ARIMAX with COVID-19 for total crimes
+
+## Overview
+
+In this model, we focus on analyzing the weekly total violent crimes in New York City using an `ARIMAX` model. The unprecedented global crisis brought on by the COVID-19 pandemic has had profound impacts on various facets of society, including crime patterns. Recognizing the potential influence of the pandemic on crime dynamics, our model integrates COVID-19 data as a critical exogenous component. This data is extracted using the `covidcast` package in R, which provides a comprehensive dataset of COVID-19 metrics.
+
+## Fitting Model With `Auto.arima()`
+
+### Load in violent crime data
+
+```{r, message=FALSE, warning=FALSE}
+library(GGally)
+library(ggplot2)
+library(forecast)
+library(tidyverse)
+library(ggthemes)
+library(plotly)
+library(lubridate)
+library(DT)
+library(TTR)
+library(astsa)
+library(covidcast)
+library(zoo)
+library(imputeTS)
+library(vars)
+
+# Load the clean violent crime data
+data <- read_csv("./dataset/crimedata_total.csv")
+data_w <- read_csv("./dataset/crimedata_week.csv")
+
+data_t <- data %>%
+  filter(offense_type == "total")
+
+v_ts <- ts(data_t$Total_Crimes, start = c(2007, 1), frequency = 365.25)
+w_ts <- ts(data_w$Total_Crimes, frequency = 52, start = c(2007, 1))
+```
+
+### COVID-19 data extraction and cleaning
+
+-   Extract COVID-19 data using `covid_cast` package in R
+
+```{r, warning=FALSE, message=FALSE}
+# Fetching COVID-19 cases data for New York City for the specified timeframe
+cases_nyc <- covidcast_signal("jhu-csse", "confirmed_incidence_num",
+                              start_day = "2020-01-01", end_day = "2022-12-31",
+                              geo_type = "county", geo_values = "36061") # 36061 is the FIPS code for New York County
+
+# Cleaning and preparing the data
+cases_nyc_cleaned <- cases_nyc %>%
+  dplyr::select(time_value, value) %>%
+  dplyr::arrange(time_value)
+
+# Ensure the date column is in the Date format
+cases_nyc_cleaned$time_value <- as.Date(cases_nyc_cleaned$time_value)
+
+# Aggregating the daily COVID-19 cases data to weekly
+cases_nyc_weekly <- cases_nyc_cleaned %>%
+  mutate(week = floor_date(time_value, "week")) %>%  
+  group_by(week) %>%
+  summarize(total_cases = sum(value, na.rm = TRUE))  
+head(cases_nyc_weekly)
+
+#sum(is.na(cases_nyc_weekly)) = 0 indicates no missing value
+
+```
+
+```{r}
+# Visualization of Covid data of NYC
+covid_plot <- ggplot(cases_nyc_weekly, aes(x = week, y = total_cases)) +
+  geom_line(color = "blue") +
+  labs(title = "Weekly COVID-19 Cases in New York City",
+       x = "Date",
+       y = "Cases") +
+  theme_minimal()
+
+# Convert to interactive plot with plotly
+ggplotly(covid_plot, tooltip = "text")
+```
+
+-   Filter weekly crime data and COVID-19 data to have matching time frame
+
+```{r}
+# Filter assault_weekly to the overlapping time period (2020-01-19 to 2021-12-26)
+data_f <- data_w %>%
+  filter(week >= as.Date("2020-01-19") & week <= as.Date("2021-12-26"))
+
+# Filter cases_nyc_weekly to the same time period
+cases_nyc_weekly_filtered <- cases_nyc_weekly %>%
+  filter(week >= as.Date("2020-01-19") & week <= as.Date("2021-12-26"))
+
+# Merging the two datasets on the 'week' column
+combined_data <- merge(data_f, cases_nyc_weekly_filtered, by = "week")
+
+combined_data <- combined_data[, -2] 
+head(combined_data)
+
+# Convert to time series
+combined_ts <- ts(combined_data, start = c(2020, 3), frequency = 52)
+```
+
+```{r}
+autoplot(combined_ts[,c(2:3)], facets=TRUE) +
+  xlab("Year") + ylab("") +
+  ggtitle("Assault crimes and Covid-19 cases of NYC from 2020 to 2022")
+```
+
+-   We need a log transform on the Covid-19 data due to a dramatic increase towards the end of the time series.
+
+```{r}
+# Apply log plus 1 transformation to the COVID-19 cases data to accommodate for 0s
+combined_ts[, 3] <- log(combined_ts[, 3] + 1)
+```
+
+```{r}
+# Plot the transformed data
+autoplot(combined_ts[,c(2:3)], facets=TRUE) +
+  xlab("Year") + ylab("") +
+  ggtitle("Assault crimes and transformed Covid-19 cases of NYC from 2020 to 2022")
+```
+
+-   The transformed COVID-19 time series have more stability.
+
+### Fit the model
+
+```{r}
+xreg <- combined_ts[, "total_cases"]
+
+fit <- auto.arima(combined_ts[, "Total_Crimes"], xreg = xreg)
+summary(fit)
+```
+
+-   Model Residuals
+
+```{r}
+checkresiduals(fit)
+```
+
+### Model coefficients
+
+-   The model computed by `auto.arima()` is a ARIMAX model with `ARIMA(0,1,1)`, the coefficient for the moving average term is `-0.4809`, which suggests a moderate negative effect from the previous error term.
+
+-   The exogenous coefficient (representing the COVID-19 cases) is -26.7319, implying that as the COVID-19 cases increase, the number of total crimes decreases, holding other factors constant.
+
+-   The negative exogenous coefficient might raise some questions about the relationship between COVID-19 cases and crime rates. It could suggest that an increase in COVID-19 cases leads to a reduction in reported violent crimes in NYC, possibly due to lockdowns or reduced public activity.
+
+### Residual Analysis
+
+-   The Ljung-Box test has a `p-value` of `0.7767`, which is well above 0.05, suggesting that the residuals are independently distributed and that there is no significant autocorrelation at lags up to 20.
+
+-   The residual plots do not show any obvious patterns or trends, which is good as it suggests that the model has captured the data's structure adequately. The histogram of residuals, overlaid with a normal distribution, seems to show that residuals are approximately normally distributed.
+
+## Fitting Manually
+
+### Linear Regression
+
+```{r}
+############# First fit the linear model##########
+fit.reg <- lm( Total_Crimes ~ total_cases, data=combined_ts)
+summary(fit.reg)
+```
+
+-   While the linear regression model does not yield significant coefficients for COVID-19 cases, indicating a weak linear relationship, the variable may still be influential in an ARIMAX model.
+
+### Extract Residuals
+
+```{r}
+########### Converting to Time Series component #######
+
+res.fit<-ts(residuals(fit.reg),start=decimal_date(as.Date("2020-01-19",format = "%Y-%m-%d")),frequency = 52)
+```
+
+### Residuals ACF/PACF
+
+```{r}
+############## Then look at the residuals ############
+ggAcf(res.fit, 50)
+```
+
+```{r}
+ggPacf(res.fit,50)
+```
+
+-   The ACF plot of regression models residual has clear correlation, differencing needs to be applied for stationary purpose.
+
+### Differencing
+
+```{r}
+res.fit %>% diff() %>% ggtsdisplay() 
+```
+
+-   Potential Model Parameters
+
+    -   `p = 0, 1, 2`
+    -   `d = 0, 1`
+    -   `q = 0, 1, 2`
+
+### Fitting Model Parameters
+
+```{r}
+######################## Check for different combinations ########
+
+
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*18),nrow=18) # roughly nrow = 3x4x2
+
+
+for (p in 1:3)# p=0,1,2 : 3
+{
+  for(q in 1:3)# q=0,1,2 :3
+  {
+    for(d in 0:1)# d=0,1 :2
+    {
+      
+      if(p-1+d+q-1<=8) #usual threshold
+      {
+        
+        model<- Arima(res.fit,order=c(p-1,d,q-1),include.drift=TRUE) 
+        ls[i,]= c(p-1,d,q-1,model$aic,model$bic,model$aicc)
+        i=i+1
+        #print(i)
+        
+      }
+      
+    }
+  }
+}
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+#temp
+knitr::kable(temp)
+```
+
+```{r}
+temp[which.min(temp$BIC),]
+```
+
+```{r}
+temp[which.min(temp$AICc),]
+```
+
+```{r}
+temp[which.min(temp$AIC),]
+```
+
+-   `ARIMAX(0,1,1)` is the best model with lowest AIC, BIC, AICc.
+
+### Model Diagnostics
+
+```{r}
+# Model diagnostics for ARIMA(0, 1, 1)
+sarima(res.fit, 0, 1, 1)
+```
+
+-   The model appears to perform well, with residuals that are normally distributed and `Ljung-Box` test p-values indicating no significant autocorrelation. Given that the residuals from both models meet these criteria.
+
+### Model Equations
+
+```{r}
+fit <- Arima(combined_ts[, "Total_Crimes"],order=c(0,1,1),xreg=xreg)
+summary(fit)
+```
+
+-   $(1 - 0B) (1 - 1B) y_t = -26.7319x_t + a_t - 0.4809a_{t-1}$
+
+### Fitting an ARIMA model to the COVID-19 data
+
+```{r}
+fit_c <- auto.arima(combined_ts[, "total_cases"]) #fitting an ARIMA model to the Covid data
+summary(fit_c) 
+
+# Obtain the forecasts
+fc <- forecast(fit_c,12)
+fc <- fc$mean
+```
+
+### Forecasts
+
+```{r}
+fcast <- forecast(fit, xreg=fc,12) 
+fcast
+autoplot(fcast, main="Forecast of violent Crimes in NYC for the next quarter") + xlab("Year") +
+  ylab("GDP")
+```
+
+### Evaluations
+
+The results from the ARIMAX model were not as robust as anticipated, possibly because I did not account for seasonality in the data. Despite this, I opted not to use a SARIMAX model due to the limited amount of COVID-19 data available, which spans only approximately two years on a weekly basis. This duration may not be sufficient for effectively capturing and modeling seasonal patterns. To potentially enhance model performance, I plan to shift to daily data, which will provide a larger data set that could be more suitable for a SARIMAX model, potentially yielding better results.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# VAR with Climate data and Unemployment rate for total crimes
+
+## Overview
+
+-   In this model, I employ a `VAR` model to analyze the interplay between monthly violent crimes in New York City and two critical variables: unemployment rates and weather data. The choice of a VAR model stems from its ability to capture the dynamic relationships between multiple time-series datasets. It is particularly suited to understand how changes in economic conditions (reflected by unemployment rates) and environmental factors (illustrated by weather data) collectively impact crime patterns.
+
+-   The integration of unemployment rates is premised on the well-documented correlation between economic conditions and crime. Economic downturns, often signaled by rising unemployment, can influence crime rates through various socio-economic mechanisms. By including unemployment data, the model aims to quantify this relationship and examine how economic fluctuations correlate with changes in crime rates. The unemployment data is from [NYUR DATA](https://fred.stlouisfed.org/series/NYUR).
+
+-   Weather data, comprising variables such as temperature, humidity, and precipitation, is included based on preliminary exploratory data analysis findings. Our initial examination revealed a notable trend: hotter weather tends to correlate with higher crime rates. This finding aligns with existing criminological theories that suggest weather can significantly impact human behavior, including the propensity to commit crimes. By incorporating weather data, our model is positioned to explore this relationship further, examining how weather patterns influence crime rates over time. The weather data is from [NOAA DATA](https://www.ncdc.noaa.gov/cdo-web/datasets/).
+
+## Load in violent crime data
+
+```{r,message=FALSE,warning=FALSE}
+# Load the clean violent crime data
+data <- read_csv("./dataset/crimedata_total.csv")
+
+data_t <- data %>%
+  filter(offense_type == "total")
+
+v_ts <- ts(data_t$Total_Crimes, start = c(2007, 1), frequency = 365.25)
+
+data_m <- data_t %>%
+  mutate(month = floor_date(date_single, "month")) %>%
+  group_by(month) %>%
+  summarise(Total_Crimes = sum(Total_Crimes))
+
+# Loading unemployment rate and temperature data
+temp <- read_csv("./dataset/tempdataNYC.csv")
+une <- read_csv("./dataset/NYUR.csv")
+colnames(temp)[1] <- "month"
+colnames(une)[1] <- "month"
+temp <- temp[-(1:3), ]
+temp$month <- paste0(substr(temp$month, 1, 4), "-", substr(temp$month, 5, 6))
+une$month <- format(as.Date(une$month), "%Y-%m")
+
+# Filter all three data to the overlapping time period (2007-01 to 2022-12)
+temp <- temp %>%
+  filter(month >= "2007-01" & month <= "2022-12")
+colnames(temp)[2] <- "temp"
+temp$temp<- as.numeric(temp$temp)
+
+une <- une %>%
+  filter(month >= "2007-01" & month <= "2022-12")
+
+data_m$month <- as.Date(paste0(data_m$month, "-01"), format="%Y-%m-%d")
+temp$month <- as.Date(paste0(temp$month, "-01"), format="%Y-%m-%d")
+une$month <- as.Date(paste0(une$month, "-01"), format="%Y-%m-%d")
+
+# Merging all 3 datasets by month
+combined_data <- merge(data_m, temp, by = "month")
+combined_data <- merge(combined_data, une, by = "month")
+
+
+knitr::kable(head(combined_data))
+
+# Convert to ts
+combined.ts<-ts(combined_data,start=decimal_date(as.Date("2007-01-01",format = "%Y-%m-%d")),frequency = 12)
+
+```
+
+## Data Visualization
+
+```{r}
+ggplot(data_m, aes(x = month, y = Total_Crimes)) +
+  geom_line() +
+  labs(title = "Monthly violent Crimes", x = "Month", y = "Number of Crimes") +
+  theme_minimal()
+
+ggplot(temp, aes(x = month, y = temp)) +
+  geom_line() +
+  labs(title = "Monthly Temperature", x = "Month", y = "Temperature") +
+  theme_minimal()
+
+ggplot(une, aes(x = month, y = NYUR)) +
+  geom_line() +
+  labs(title = "Monthly Unemployment Rate", x = "Month", y = "Unemployment Rate") +
+  theme_minimal()
+```
+
+## Fitting Model With `VARselect()`
+
+```{r}
+VARselect(combined_data[, c(2:4)], lag.max=12, type="both")
+```
+
+-   Based on the results, we have VAR(5) and VAR(12).
+
+## Model Diagnostics
+
+### `VAR(5)`
+
+```{r}
+summary(vars::VAR(combined_data[, c(2:4)], p=5, type='both'))
+```
+
+-   The first lags of violent crimes are significant predictors, and the third and fifth lags also contribute meaningfully.
+
+-   Temperature and unemployment rate in some lags show significance, with the fifth lag of temperature being a strong predictor.
+
+-   R squared of the model is 0.8518indicating a strong fit.
+
+-   Residuals
+
+```{r}
+VAR5 <- VAR(combined_data[,c(2:4)], p=5, type="both")
+serial.test(VAR5, lags.pt=12, type="PT.asymptotic")
+acf(residuals(VAR5))
+```
+
+-   The residuals are normally distributed.
+
+### `VAR(12)`
+
+```{r}
+summary(vars::VAR(combined_data[, c(2:4)], p=12, type='both'))
+```
+
+-   most of the coeffcients values are not significant predictors.
+
+-   Temperature and unemployment rate in some lags show significance, with the second lag of unemploymnet rate being a strong predictor.
+
+-   R squared of the model is 0.8631 indicating a strong fit.
+
+-   Residuals
+
+```{r}
+VAR12 <- VAR(combined_data[,2:4], p=12, type="both")
+serial.test(VAR12, lags.pt=12, type="PT.asymptotic")
+acf(residuals(VAR12))
+```
+
+-   Residuals are normally distributed.
+
+## Forecasts
+
+### `VAR(5)`
+
+```{r}
+ts_obj <- ts(combined_data[, c(2:4)], start=decimal_date(as.Date("2007-01-01",format = "%Y-%m-%d")),frequency = 12)
+
+fit <- VAR(ts_obj, p=5, type='both')
+forecast(fit)
+forecast(fit) %>% autoplot() + xlab("Year")
+```
+
+### `VAR(12)`
+
+```{r}
+fit <- VAR(ts_obj, p=12, type='both')
+forecast(fit)
+forecast(fit) %>% autoplot() + xlab("Year")
+```
+
+### Evaluations
+
+the historical data shows fluctuations with no clear long-term trend. The forecast suggests a stable outlook with a slight uptick towards the end, within a moderate confidence interval.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# VAR with COVID-19 data for total crimes
+
+## Overview
+
+-   In this model, we employs a Vector Autoregression `VAR` model to scrutinize the weekly total crime rates in New York City, contextualized by the significant societal disruptions of the COVID-19 pandemic. The model is designed to understand how the pandemic may have altered crime trends, leveraging the robust COVID-19 datasets available from the covidcast package in R. These datasets capture a range of COVID-19 metrics, serving as vital exogenous inputs to our model, thus facilitating a comprehensive examination of the pandemic's imprint on urban crime patterns.
+
+```{r, message=FALSE, warning=FALSE}
+# Load the clean violent crime data
+data <- read_csv("./dataset/crimedata_total.csv")
+data_w <- read_csv("./dataset/crimedata_week.csv")
+
+data_t <- data %>%
+  filter(offense_type == "total")
+
+#v_ts <- ts(data_t$Total_Crimes, start = c(2007, 1), frequency = 365.25)
+#w_ts <- ts(data_w$Total_Crimes, frequency = 52, start = c(2007, 1))
+
+# Aggregating the daily COVID-19 cases data to weekly
+cases_nyc_weekly <- cases_nyc_cleaned %>%
+  mutate(week = floor_date(time_value, "week")) %>%  
+  group_by(week) %>%
+  summarize(total_cases = sum(value, na.rm = TRUE))  
+
+cases_nyc_weekly$total_cases <- cases_nyc_weekly$total_cases +1
+
+# Merge data sets
+# Filter assault_weekly to the overlapping time period (2020-01-19 to 2021-12-26)
+data_w <- data_w %>%
+  filter(week >= "2020-01-19" & week <= "2022-12-25")
+
+
+# Merging the two datasets on the 'date' column
+combined_data <- merge(data_w, cases_nyc_weekly, by = "week")
+combined_data <- combined_data[, -2] 
+head(combined_data)
+```
+
+## Data Visualization
+
+```{r}
+ggplot(data_w, aes(x = week, y = Total_Crimes)) +
+  geom_line() +
+  labs(title = "Weekly Violent Crimes", x = "Date", y = "Number of Crimes") +
+  theme_minimal()
+
+ggplot(cases_nyc_weekly, aes(x = week, y = total_cases)) +
+  geom_line() +
+  labs(title = "Weekly COVID-19 total cases", x = "Date", y = "Cases") +
+  theme_minimal()
+
+```
+
+## Fitting Model with VARselect()
+
+```{r}
+VARselect(combined_data[, c(2:3)], lag.max=14, type="both")
+```
+
+-   Based on the results, we have `VAR(2)`, `VAR(4)` and `VAR(6)`
+
+## Model Diagnostics
+
+### VAR(2)
+
+```{r}
+summary(vars::VAR(combined_data[, c(2:3)], p=2, type='both'))
+```
+
+-   Residuals
+
+```{r}
+VAR2 <- VAR(combined_data[,c(2:3)], p=2, type="both")
+serial.test(VAR2, lags.pt=52, type="PT.asymptotic")
+acf(residuals(VAR2))
+```
+
+-   Residuals are not normally distributed.
+
+### VAR(4)
+
+```{r}
+summary(vars::VAR(combined_data[, c(2:3)], p=4, type='both'))
+```
+
+-   Both models looks good based on the model diagnostics, most coefficients are significant, combined with a high R square of above 0.7.
+
+-   Residuals
+
+```{r}
+VAR4 <- VAR(combined_data[,c(2:3)], p=4, type="both")
+serial.test(VAR4, lags.pt=52, type="PT.asymptotic")
+acf(residuals(VAR4))
+```
+
+-   Residuals are not normally distributed.
+
+### VAR(6)
+
+```{r}
+summary(vars::VAR(combined_data[, c(2:3)], p=6, type='both'))
+```
+
+-   Both models looks good based on the model diagnostics, most coefficients are significant, combined with a high R square of above 0.8.
+
+-   Residuals
+
+```{r}
+VAR6 <- VAR(combined_data[,c(2:3)], p=6, type="both")
+serial.test(VAR6, lags.pt=52, type="PT.asymptotic")
+acf(residuals(VAR6))
+```
+
+-   Residuals are not normally distributed.
+
+## Forecasts
+
+### VAR(2)
+
+```{r}
+ts_obj <- ts(combined_data[, c(2:3)], star=decimal_date(as.Date("2020-01-19",format = "%Y-%m-%d")),frequency = 52)
+fit <- VAR(ts_obj, p=2, type='both')
+forecast(fit)
+forecast(fit) %>% autoplot() + xlab("Year")
+```
+
+### VAR(4)
+
+```{r}
+ts_obj <- ts(combined_data[, c(2:3)], star=decimal_date(as.Date("2020-01-19",format = "%Y-%m-%d")),frequency = 52)
+fit <- VAR(ts_obj, p=4, type='both')
+forecast(fit)
+forecast(fit) %>% autoplot() + xlab("Year")
+```
+
+### VAR(6)
+
+```{r}
+ts_obj <- ts(combined_data[, c(2:3)], star=decimal_date(as.Date("2020-01-19",format = "%Y-%m-%d")),frequency = 52)
+fit <- VAR(ts_obj, p=6, type='both')
+forecast(fit)
+forecast(fit) %>% autoplot() + xlab("Year")
+```
+
+## Evaluations
+
+-   VAR(2) Forecast: The forecast for violent crimes indicates a stable trend with a slight increase toward the end, and the confidence interval is moderate.
+
+-   VAR(4) Forecast: The forecast for violent crimes remains stable with a slightly positive trend toward the end, similar to VAR(2), but with a narrower confidence interval, suggesting more certainty in the prediction.
+
+-   VAR(6) Forecast: The forecast for violent crimes remains stable with a slightly positive trend toward the end, similar to VAR(2), but with a narrower confidence interval, suggesting more certainty in the prediction.
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ARIMAX with COVID-19 for aggravated assault
+
+
+## Overview
+
+In this model, we focus on analyzing the weekly aggravated violent crimes in New York City using an `ARIMAX` model. The unprecedented global crisis brought on by the COVID-19 pandemic has had profound impacts on various facets of society, including crime patterns. Recognizing the potential influence of the pandemic on crime dynamics, our model integrates COVID-19 data as a critical exogenous component. This data is extracted using the `covidcast` package in R, which provides a comprehensive dataset of COVID-19 metrics.
+
+```{r, message=FALSE, warning=FALSE}
+library(GGally)
+library(ggplot2)
+library(forecast)
+library(tidyverse)
+library(ggthemes)
+library(plotly)
+library(lubridate)
+library(DT)
+library(TTR)
+library(astsa)
+library(covidcast)
+library(zoo)
+library(imputeTS)
+library(vars)
+
+# Read the crime data from a CSV file into a dataframe
+data <- read_csv("./dataset/crimedata_NYC.csv")
+
+# Filter the data to include only 'aggravated assault' type offenses
+assault <- data %>%
+  filter(offense_type == "aggravated assault")
+# Convert the date to a Date object for easier handling
+assault$date <- as.Date(assault$date_single)
+
+# Aggregate data to count the number of assaults per date
+assault_day <- assault %>%
+  mutate(n = 1) %>%
+  group_by(date) %>%
+  summarize(crime_numbers = sum(n))
+
+# Create a new dataframe with the aggregated data
+assault <- data.frame(
+  date = assault_day$date,
+  crimes = assault_day$crime_numbers
+)
+# Convert the daily crime data into a time series object with daily frequency
+assault_ts <- ts(assault$crimes, start = c(2018, 1), frequency = 365)
+
+# Aggregate the daily data into weekly data
+assault_weekly <- assault %>%
+  mutate(week = lubridate::floor_date(date, "week")) %>%  # Rounding down the date to the start of the week
+  group_by(week) %>%
+  summarise(total_crimes = sum(crimes))
+# Convert the weekly aggregated crime data into a time series object with weekly frequency
+ts_assault_weekly <- ts(assault_weekly$total_crimes, frequency = 52, start = c(2018, 1))
+```
+
+## COVID-19 data extraction and cleaning
+
+-   Extract COVID data using `covid_cast` package in R
+
+```{r, warning=FALSE, message=FALSE}
+# Fetching COVID-19 cases data for New York City for the specified timeframe
+cases_nyc <- covidcast_signal("jhu-csse", "confirmed_incidence_num",
+                              start_day = "2020-01-01", end_day = "2022-12-31",
+                              geo_type = "county", geo_values = "36061") # 36061 is the FIPS code for New York County
+
+# Cleaning and preparing the data
+cases_nyc_cleaned <- cases_nyc %>%
+  dplyr::select(time_value, value) %>%
+  dplyr::arrange(time_value)
+
+# Ensure the date column is in the Date format
+cases_nyc_cleaned$time_value <- as.Date(cases_nyc_cleaned$time_value)
+
+# Aggregating the daily COVID-19 cases data to weekly
+cases_nyc_weekly <- cases_nyc_cleaned %>%
+  mutate(week = floor_date(time_value, "week")) %>%  
+  group_by(week) %>%
+  summarize(total_cases = sum(value, na.rm = TRUE))  
+head(cases_nyc_weekly)
+
+#sum(is.na(cases_nyc_weekly)) = 0 indicates no missing value
+
+```
+
+```{r}
+# Visualization of Covid data of NYC
+covid_plot <- ggplot(cases_nyc_weekly, aes(x = week, y = total_cases)) +
+  geom_line(color = "blue") +
+  labs(title = "Weekly COVID-19 Cases in New York City",
+       x = "Date",
+       y = "Cases") +
+  theme_minimal()
+
+# Convert to interactive plot with plotly
+ggplotly(covid_plot, tooltip = "text")
+```
+
+-   Filter weekly assault data and COVID-19 data to have matching time frame
+
+```{r}
+# Filter assault_weekly to the overlapping time period (2020-01-19 to 2021-12-26)
+assault_weekly_filtered <- assault_weekly %>%
+  filter(week >= as.Date("2020-01-19") & week <= as.Date("2021-12-26"))
+
+# Filter cases_nyc_weekly to the same time period
+cases_nyc_weekly_filtered <- cases_nyc_weekly %>%
+  filter(week >= as.Date("2020-01-19") & week <= as.Date("2021-12-26"))
+
+# Merging the two datasets on the 'week' column
+combined_data <- merge(assault_weekly_filtered, cases_nyc_weekly_filtered, by = "week")
+head(combined_data)
+
+# Convert to time series
+combined_ts <- ts(combined_data, start = c(2020, 3), frequency = 52)
+```
+
+```{r}
+autoplot(combined_ts[,c(2:3)], facets=TRUE) +
+  xlab("Year") + ylab("") +
+  ggtitle("Assault crimes and Covid-19 cases of NYC from 2020 to 2022")
+```
+
+-   We need a `log transform` on the COVID-19 data due to a dramatic increase towards the end of the time series.
+
+```{r}
+# Apply log plus 1 transformation to the COVID-19 cases data to accommodate for 0s
+combined_ts[, 3] <- log(combined_ts[, 3] + 1)
+```
+
+```{r}
+# Plot the transformed data
+autoplot(combined_ts[,c(2:3)], facets=TRUE) +
+  xlab("Year") + ylab("") +
+  ggtitle("Assault crimes and transformed Covid-19 cases of NYC from 2020 to 2022")
+```
+
+-   The transformed COVID-19 series have more stability.
+
+## Fit with `auto.arima`
+
+```{r}
+xreg <- combined_ts[, "total_cases"]
+
+fit <- auto.arima(combined_ts[, "total_crimes"], xreg = xreg)
+summary(fit)
+```
+
+```{r}
+checkresiduals(fit)
+```
+
+## Model diagnostics
+
+### Model coefficients
+
+-   The model computed by `auto.arima()` is a ARIMAX model with ARIMA(0,1,1), the coefficient for the moving averafe term is -0.5074, which suggests a moderate negative effect from the previous error term.
+
+-   The exogenous coefficient (representing the COVID-19 cases) is -14.4388, implying that as the COVID-19 cases increase, the number of total crimes decreases, holding other factors constant.
+
+-   The negative exogenous coefficient might raise some questions about the relationship between Covid-19 cases and crime rates. It could suggest that an increase in Covid-19 cases leads to a reduction in reported assault crimes in NYC, possibly due to lockdowns or reduced public activity.
+
+### Residual Analysis
+
+-   The Ljung-Box test has a p-value of 0.665, which is well above 0.05, suggesting that the residuals are independently distributed and that there is no significant autocorrelation at lags up to 20.
+
+-   The residual plots do not show any obvious patterns or trends, which is good as it suggests that the model has captured the data's structure adequately. The histogram of residuals, overlaid with a normal distribution, seems to show that residuals are approximately normally distributed.
+
+## Fitting Manually
+
+### Linear Regression
+
+```{r}
+############# First fit the linear model##########
+fit.reg <- lm( total_crimes ~ total_cases, data=combined_ts)
+summary(fit.reg)
+```
+
+-   While the linear regression model does not yield significant coefficients for COVID-19 cases, indicating a weak linear relationship, the variable may still be influential in an ARIMAX model.
+
+### Converting to Time Series Component
+
+```{r}
+########### Converting to Time Series component #######
+
+res.fit<-ts(residuals(fit.reg),start=decimal_date(as.Date("2020-01-19",format = "%Y-%m-%d")),frequency = 52)
+```
+
+### Residuals ACF/PACF
+
+```{r}
+############## Then look at the residuals ############
+ggAcf(res.fit)
+```
+
+```{r}
+ggPacf(res.fit)
+```
+
+-   The ACF plot of regression models residual has clear correlation, differencing needs to be applied for stationary purpose.
+
+### Differencing
+
+```{r}
+res.fit %>% diff() %>% ggtsdisplay() 
+```
+
+-   Potential Model Parameters
+
+    -   p = 0, 1, 2
+    -   d = 0, 1
+    -   q = 0, 1, 2
+
+### Fitting Model Parameters
+
+```{r}
+######################## Check for different combinations ########
+
+
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*18),nrow=18) # roughly nrow = 3x4x2
+
+
+for (p in 1:3)# p=0,1,2 : 3
+{
+  for(q in 1:3)# q=0,1,2 :3
+  {
+    for(d in 0:1)# d=0,1 :2
+    {
+      
+      if(p-1+d+q-1<=8) #usual threshold
+      {
+        
+        model<- Arima(res.fit,order=c(p-1,d,q-1),include.drift=TRUE) 
+        ls[i,]= c(p-1,d,q-1,model$aic,model$bic,model$aicc)
+        i=i+1
+        #print(i)
+        
+      }
+      
+    }
+  }
+}
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+#temp
+knitr::kable(temp)
+```
+
+```{r}
+temp[which.min(temp$BIC),]
+```
+
+```{r}
+temp[which.min(temp$AICc),]
+```
+
+```{r}
+temp[which.min(temp$AIC),]
+```
+
+We have two models here, ARIMA(0, 1, 1) is suggested by the lowest BIC, and ARIMA(2, 1, 1) is suggest by lowest AIC and AICc
+
+### ARIMAX Model Diagnostics
+
+```{r}
+# Model diagnostics for ARIMA(0, 1, 1)
+sarima(res.fit, 0, 1, 1)
+```
+
+```{r}
+# Model diagnostics for ARIMA(2, 1, 1)
+sarima(res.fit, 2, 1, 1)
+```
+
+-   Both models appear to perform well, with residuals that are normally distributed and Ljung-Box test p-values indicating no significant autocorrelation. Given that the residuals from both models meet these criteria, we will proceed with cross-validation to further compare their predictive performance and select the most appropriate model for our data.
+
+### Cross Validation
+
+```{r}
+# Function to forecast
+farima1 <- function(x, h){forecast(Arima(x, order=c(0,1,1)), h=h)}
+farima2 <- function(x, h){forecast(Arima(x, order=c(2,1,1)), h=h)}
+
+# 52 steps a head cross validation (a whole year)
+h <- 52
+rmse1 <- numeric(h)
+rmse2 <- numeric(h)
+
+for (i in 1:h) {
+  e1 <- tsCV(res.fit, farima1, h=i)
+  e2 <- tsCV(res.fit, farima2, h=i)
+  
+  # Calculate RMSE for each horizon
+  rmse1[i] <- sqrt(mean(e1^2, na.rm=TRUE))
+  rmse2[i] <- sqrt(mean(e2^2, na.rm=TRUE))
+}
+
+# Create a data frame for plotting
+rmse <- data.frame(horizon = 1:h, 
+                        RMSE1 = rmse1, 
+                        RMSE2 = rmse2)
+
+# Plot RMSE vs Horizon
+cv1 <- ggplot(data = rmse) + 
+  geom_line(aes(x = horizon, y = RMSE1, colour = "ARIMA(0,1,1)")) + 
+  geom_line(aes(x = horizon, y = RMSE2, colour = "ARIMA(2,1,1)")) +
+  labs(x = "Forecast Horizon", y = "RMSE", title = "RMSE vs Forecast Horizon for ARIMA Models") +
+   geom_point(aes(y=RMSE1,x= horizon)) + 
+  geom_point(aes(y=RMSE2,x= horizon)) +
+  theme_minimal()
+
+ggplotly(cv1)
+```
+
+The cross-validation plot indicates that for short-term forecasts of up to approximately 10 steps ahead, the ARIMA(0,1,1) model outperforms, exhibiting lower RMSE values. However, for longer-term forecasts beyond 10 steps, the ARIMA(2,1,1) model demonstrates improved performance, yielding more accurate predictions as evidenced by its reduced RMSE. Here I will use ARIMA(2, 1, 1).
+
+## Model Equations
+
+```{r}
+fit <- Arima(combined_ts[, "total_crimes"],order=c(2,1,1),xreg=xreg)
+summary(fit)
+```
+
+-   The model equation for the ARIMAX model is $(1 - 0.9213B - 0.4422B^2)(1 - B)Y_t = (1 + 0.4743B) \varepsilon\_t - 12.8691 X_t $
+
+## Forecasts
+
+### Fitting an ARIMA model to the COVID data
+
+```{r}
+fit_c <- auto.arima(combined_ts[, "total_cases"]) #fitting an ARIMA model to the Covid data
+summary(fit_c) 
+
+# Obtain the forecasts
+fc <- forecast(fit_c,12)
+fc <- fc$mean
+```
+
+### Presenting the Forecasts
+
+```{r}
+fcast <- forecast(fit, xreg=fc,12) 
+fcast
+autoplot(fcast, main="Forecast of Assault Crimes in NYC for the next quarter") + xlab("Year") +
+  ylab("GDP")
+```
+
+## Evaluations
+
+The results from the ARIMAX model were not as robust as anticipated, possibly because I did not account for seasonality in the data. Despite this, I opted not to use a SARIMAX model due to the limited amount of COVID-19 data available, which spans only approximately two years on a weekly basis. This duration may not suffice for effectively capturing and modeling seasonal patterns. To potentially enhance model performance, I plan to shift to daily data, which will provide a larger dataset that could be more suitable for a SARIMAX model, potentially yielding better results.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# VAR model with unemploymnet rates and climate data with aggravated assault
+
+
+## Overview
+
+
+-   In this model, I employ a `VAR` model to analyze the interplay between monthly aggravated assault crimes in New York City and two critical variables: unemployment rates and weather data. The choice of a VAR model stems from its ability to capture the dynamic relationships between multiple time-series datasets. It is particularly suited to understand how changes in economic conditions (reflected by unemployment rates) and environmental factors (illustrated by weather data) collectively impact crime patterns.
+
+-   The integration of unemployment rates is premised on the well-documented correlation between economic conditions and crime. Economic downturns, often signaled by rising unemployment, can influence crime rates through various socio-economic mechanisms. By including unemployment data, the model aims to quantify this relationship and examine how economic fluctuations correlate with changes in crime rates. The unemployment data is from [NYUR DATA](https://fred.stlouisfed.org/series/NYUR).
+
+-   Weather data, comprising variables such as temperature, humidity, and precipitation, is included based on preliminary exploratory data analysis findings. Our initial examination revealed a notable trend: hotter weather tends to correlate with higher crime rates. This finding aligns with existing criminological theories that suggest weather can significantly impact human behavior, including the propensity to commit crimes. By incorporating weather data, our model is positioned to explore this relationship further, examining how weather patterns influence crime rates over time. The weather data is from [NOAA DATA](https://www.ncdc.noaa.gov/cdo-web/datasets/).
+
+```{r,message=FALSE,warning=FALSE}
+# Read the crime data from a CSV file into a dataframe
+data <- read_csv("./dataset/crimedata_NYC.csv")
+
+# Filter the data to include only 'aggravated assault' type offenses
+assault <- data %>%
+  filter(offense_type == "aggravated assault")
+# Convert the date to a Date object for easier handling
+assault$date <- as.Date(assault$date_single)
+
+# Aggregate data to count the number of assaults per day
+#assault_day <- assault %>%
+#  mutate(n = 1) %>%
+#  group_by(date) %>%
+#  summarize(crimes = sum(n))
+
+
+# Aggregate data to count the number of assaults per month
+assault_month <- assault %>%
+  mutate(n = 1) %>%
+  mutate(month = format(date, "%Y-%m")) %>%  # Extract year and month
+  group_by(month) %>%
+  summarize(crimes = sum(n))
+
+# Add missing rows for 2012
+missing_dates <- seq(ymd("2012-01-01"), ymd("2012-12-01"), by="1 month")
+missing_data <- data.frame(month = format(missing_dates, "%Y-%m"), crimes = NA)
+
+# Combine your existing data with the missing data
+assault_month <- bind_rows(assault_month, missing_data) %>%
+  arrange(month)
+
+# Perform moving average interpolation
+imputed_data <- na_ma(assault_month$crimes, k = 12, weighting = "exponential")
+assault_month <- data.frame(
+  month = assault_month$month,
+  crimes = imputed_data
+)
+
+# Loading unemployment rate and temperature data
+temp <- read_csv("./dataset/tempdataNYC.csv")
+une <- read_csv("./dataset/NYUR.csv")
+colnames(temp)[1] <- "month"
+colnames(une)[1] <- "month"
+temp <- temp[-(1:3), ]
+temp$month <- paste0(substr(temp$month, 1, 4), "-", substr(temp$month, 5, 6))
+une$month <- format(as.Date(une$month), "%Y-%m")
+
+# Filter all three data to the overlapping time period (2007-01 to 2022-12)
+temp <- temp %>%
+  filter(month >= "2007-01" & month <= "2022-12")
+colnames(temp)[2] <- "temp"
+temp$temp<- as.numeric(temp$temp)
+
+une <- une %>%
+  filter(month >= "2007-01" & month <= "2022-12")
+
+assault_month$month <- as.Date(paste0(assault_month$month, "-01"), format="%Y-%m-%d")
+temp$month <- as.Date(paste0(temp$month, "-01"), format="%Y-%m-%d")
+une$month <- as.Date(paste0(une$month, "-01"), format="%Y-%m-%d")
+
+# Merging all 3 datasets by month
+combined_data <- merge(assault_month, temp, by = "month")
+combined_data <- merge(combined_data, une, by = "month")
+
+
+knitr::kable(head(combined_data))
+
+# Convert to ts
+combined.ts<-ts(combined_data,start=decimal_date(as.Date("2007-01-01",format = "%Y-%m-%d")),frequency = 12)
+
+```
+
+#### Data Visualization
+
+```{r}
+ggplot(assault_month, aes(x = month, y = crimes)) +
+  geom_line() +
+  labs(title = "Monthly Assault Crimes", x = "Month", y = "Number of Crimes") +
+  theme_minimal()
+
+ggplot(temp, aes(x = month, y = temp)) +
+  geom_line() +
+  labs(title = "Monthly Temperature", x = "Month", y = "Temperature") +
+  theme_minimal()
+
+ggplot(une, aes(x = month, y = NYUR)) +
+  geom_line() +
+  labs(title = "Monthly Unemployment Rate", x = "Month", y = "Unemployment Rate") +
+  theme_minimal()
+```
+
+#### Fitting Model With VARselect()
+
+```{r}
+VARselect(combined_data[, c(2:4)], lag.max=12, type="both")
+```
+
+-   Based on the results, we have VAR(5) and VAR(6).
+
+#### VAR Model Diagnostics
+
+##### VAR(5)
+
+```{r}
+summary(vars::VAR(combined_data[, c(2:4)], p=5, type='both'))
+```
+
+-   The first and second lags of assaulted crimes are significant predictors, while the third and fifth lags also contribute meaningfully.
+
+-   Temperature and unemployment rate in some lags show significance, with the fifth lag of temperature being a strong predictor.
+
+-   R squared of the model is 0.861 indicating a strong fit.
+
+-   Residuals
+
+```{r}
+VAR5 <- VAR(combined_data[,c(2:4)], p=5, type="both")
+serial.test(VAR5, lags.pt=12, type="PT.asymptotic")
+acf(residuals(VAR5))
+```
+
+-   The residuals are normally distributed.
+
+##### VAR(6)
+
+```{r}
+summary(vars::VAR(combined_data[, c(2:4)], p=6, type='both'))
+```
+
+-   None of the assaulted crimes are significant predictors.
+
+-   Temperature and unemployment rate in some lags show significance, with the second lag of unemploymnet rate being a strong predictor.
+
+-   R squared of the model is 0.8675 indicating a strong fit.
+
+-   Residuals
+
+```{r}
+VAR6 <- VAR(combined_data[,2:4], p=6, type="both")
+serial.test(VAR6, lags.pt=12, type="PT.asymptotic")
+acf(residuals(VAR6))
+```
+
+-   Residuals are normally distributed.
+
+#### Cross Validation
+
+```{r}
+n=length(combined_data$crimes)
+k=24
+
+#n-k=164; 164/4=41;
+
+rmse1 <- matrix(NA, 168,3)
+rmse2 <- matrix(NA, 168,3)
+rmse3 <- matrix(NA,14,12)
+year<-c()
+
+# Convert data frame to time series object
+ts_obj <- ts(combined_data[, c(2:4)], star=decimal_date(as.Date("2007-01-01",format = "%Y-%m-%d")),frequency = 12)
+
+st <- tsp(ts_obj )[1]+(k-1)/12 
+
+
+for(i in 1:14)
+{
+  
+  xtrain <- window(ts_obj, end=st + i-1)
+  xtest <- window(ts_obj, start=st + (i-1) + 1/12, end=st + i)
+  
+  ######## first Model ############
+  fit <- VAR(ts_obj, p=5, type='both')
+  fcast <- predict(fit, n.ahead = 12)
+  
+  fc<-fcast$fcst$crimes
+  ft<-fcast$fcst$temp
+  fu<-fcast$fcst$NYUR
+  
+  ff<-data.frame(fc[,1],ft[,1],fu[,1]) #collecting the forecasts for 3 variables
+  
+  year<-st + (i-1) + 1/12 #starting year
+  
+  ff<-ts(ff,start=c(year,1),frequency = 12)
+  
+  a = 12*i-11 #going from 1,5, 9,13
+  b= 12*i #4, 8, 12
+  
+  ## it's going from 1978 Q1(1)-Q4(4); 1979 Q1(5)-Q4(8); 1980 Q1(9)-Q4(12)....
+  
+  ##### collecting errors ######
+  rmse1[c(a:b),]  <-sqrt((ff-xtest)^2)
+  
+  
+  ######## Second Model ############
+  fit2 <- vars::VAR(ts_obj, p=6, type='both')
+  fcast2 <- predict(fit2, n.ahead = 12)
+  
+  fc<-fcast2$fcst$crimes
+  ft<-fcast2$fcst$temp
+  fu<-fcast2$fcst$NYUR
+  
+  ff2<-data.frame(fc[,1],ft[,1],fu[,1]) #collecting the forecasts for 3 variables
+  
+  year<-st + (i-1) + 1/12
+  
+  ff2<-ts(ff2,start=c(year,1),frequency = 12)
+  
+  a = 12*i-11
+  b= 12*i
+  rmse2[c(a:b),]  <-sqrt((ff2-xtest)^2)
+}
+
+yr = rep(c(2009:2022),each =12) #year
+mo = rep(paste0("M",1:12),14) #quarter
+
+rmse1 = data.frame(yr,mo,rmse1)
+names(rmse1) =c("Year", "Month","Crimes","Temperature","Unemployment")
+rmse2 = data.frame(yr,mo,rmse2)
+names(rmse2) =c("Year", "Month","Crimes","Temperature","Unemployment")
+
+ggplot() + 
+  geom_line(data = rmse1, aes(x = Year, y = Crimes),color = "blue") +
+  geom_line(data = rmse2, aes(x = Year, y = Crimes),color = "red") +
+  labs(
+    title = "CV RMSE for Assault Crimes",
+    x = "Date",
+    y = "RMSE",
+    guides(colour=guide_legend(title="Fit")))
+```
+
+```{r}
+ggplot() + 
+  geom_line(data = rmse1, aes(x = Year, y = Temperature),color = "blue") +
+  geom_line(data = rmse2, aes(x = Year, y = Temperature),color = "red") +
+  labs(
+    title = "CV RMSE for Temperature",
+    x = "Date",
+    y = "RMSE",
+    guides(colour=guide_legend(title="Fit")))
+```
+
+```{r}
+ggplot() + 
+  geom_line(data = rmse1, aes(x = Year, y = Unemployment),color = "blue") +
+  geom_line(data = rmse2, aes(x = Year, y = Unemployment),color = "red") +
+  labs(
+    title = "CV RMSE for Unemployment rate",
+    x = "Date",
+    y = "RMSE",
+    guides(colour=guide_legend(title="Fit")))
+```
+
+-   The blue fit which is the VAR(5) model, consistently has a lower RMSE compared with VAR(6) which is the red line, VAR(6) is a better fit.
+
+#### Forecasts
+
+-   From the cross validation from last part, we have concluded that VAR(5) is a better model, here we are going to forecast using VAR(5)
+
+```{r}
+forecast(fit)
+forecast(fit) %>% autoplot() + xlab("Year")
+```
+
+#### Evaluations
+
+the historical data shows fluctuations with no clear long-term trend. The forecast suggests a stable outlook with a slight uptick towards the end, within a moderate confidence interval.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# VAR model with COVID-19 with aggravated assault
+
+#### Overview
+
+-   In this model, we employs a Vector Autoregression `(VAR)` model to scrutinize the weekly total crime rates in New York City, contextualized by the significant societal disruptions of the COVID-19 pandemic. The model is designed to understand how the pandemic may have altered crime trends, leveraging the robust COVID-19 datasets available from the covidcast package in R. These datasets capture a range of COVID-19 metrics, serving as vital exogenous inputs to our model, thus facilitating a comprehensive examination of the pandemic's imprint on urban crime patterns. \$Crimes \~ Covid-19 \$
+
+```{r, message=FALSE, warning=FALSE}
+
+
+# Aggregate data to count the number of assaults per week
+assault_week <- assault_day %>%
+  mutate(week = floor_date(as.Date(date), unit = "week")) %>%
+  group_by(week) %>%
+  summarize(crimes = sum(crime_numbers), .groups = "drop")
+
+# Aggregating the daily COVID-19 cases data to weekly
+cases_nyc_weekly <- cases_nyc_cleaned %>%
+  mutate(week = floor_date(time_value, "week")) %>%  
+  group_by(week) %>%
+  summarize(total_cases = sum(value, na.rm = TRUE))  
+
+cases_nyc_weekly$total_cases <- cases_nyc_weekly$total_cases +1
+
+# Merge data sets
+# Filter assault_weekly to the overlapping time period (2020-01-19 to 2021-12-26)
+assault_week <- assault_week %>%
+  filter(week >= "2020-01-19" & week <= "2022-12-25")
+
+
+# Merging the two datasets on the 'date' column
+combined_data <- merge(assault_week, cases_nyc_weekly, by = "week")
+head(combined_data)
+```
+
+#### Data Visualization
+
+```{r}
+ggplot(assault_week, aes(x = week, y = crimes)) +
+  geom_line() +
+  labs(title = "Weekly Assault Crimes", x = "Date", y = "Number of Crimes") +
+  theme_minimal()
+
+ggplot(cases_nyc_weekly, aes(x = week, y = total_cases)) +
+  geom_line() +
+  labs(title = "Weekly Covid-19 total cases", x = "Date", y = "Cases") +
+  theme_minimal()
+
+```
+
+#### Fitting Model with VARselect()
+
+```{r}
+VARselect(combined_data[, c(2:3)], lag.max=14, type="both")
+```
+
+-   Based on the results, we have VAR(2) and VAR(3).
+
+##### VAR(2)
+
+```{r}
+summary(vars::VAR(combined_data[, c(2:3)], p=2, type='both'))
+```
+
+-   Residuals
+
+```{r}
+VAR2 <- VAR(combined_data[,c(2:3)], p=2, type="both")
+serial.test(VAR2, lags.pt=52, type="PT.asymptotic")
+acf(residuals(VAR2))
+```
+
+-   Residuals are not normally distributed.
+
+##### VAR(3)
+
+```{r}
+summary(vars::VAR(combined_data[, c(2:3)], p=3, type='both'))
+```
+
+-   Both models looks good based on the model diagnostics, most coefficients are significant, combined with a high R square of above 0.7.
+
+-   Residuals
+
+```{r}
+VAR3 <- VAR(combined_data[,c(2:3)], p=3, type="both")
+serial.test(VAR3, lags.pt=52, type="PT.asymptotic")
+acf(residuals(VAR3))
+```
+
+-   Residuals are not normally distributed.
+
+#### Cross Validation
+
+-   I'm having issues with cross validation for this model currently, code always generate error, will try my best to figure out the cause.
+
+#### Forecasts
+
+-   VAR(2)
+
+```{r}
+ts_obj <- ts(combined_data[, c(2:3)], star=decimal_date(as.Date("2020-01-19",format = "%Y-%m-%d")),frequency = 52)
+fit <- VAR(ts_obj, p=2, type='both')
+forecast(fit)
+forecast(fit) %>% autoplot() + xlab("Year")
+```
+
+-   VAR(3)
+
+```{r}
+ts_obj <- ts(combined_data[, c(2:3)], star=decimal_date(as.Date("2020-01-19",format = "%Y-%m-%d")),frequency = 52)
+fit <- VAR(ts_obj, p=3, type='both')
+forecast(fit)
+forecast(fit) %>% autoplot() + xlab("Year")
+```
+
+##### Evaluations
+
+-   VAR(2) Forecast: The forecast for assault crimes indicates a stable trend with a slight increase toward the end, and the confidence interval is moderate.
+
+VAR(3) Forecast: The forecast for assault crimes remains stable with a slightly positive trend toward the end, similar to VAR(2), but with a narrower confidence interval, suggesting more certainty in the prediction.
+
+
+
+:::
