@@ -2,7 +2,7 @@
 
 ## 🌐 Project Website
 Explore the full project and interactive visualizations here:  
-**[NYC Crime Time Series Analysis Website](https://michaelx1010.github.io/NYC-Crime-Time-Series-Analysis)**  
+**[NYC Crime Time Series Analysis Website](https://michaelxie.georgetown.domains/5600/Introduction.html)**  
 
 ---
 
